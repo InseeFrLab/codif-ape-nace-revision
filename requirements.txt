@@ -1729,9 +1729,16 @@ wrapt==1.17.2 \
     --hash=sha256:e8b2816ebef96d83657b56306152a93909a83f23994f4b30ad4573b00bd11bb9 \
     --hash=sha256:eaf675418ed6b3b31c7a989fd007fa7c3be66ce14e5c3b27336383604c9da85c \
     --hash=sha256:ec89ed91f2fa8e3f52ae53cd3cf640d6feff92ba90d62236a81e4e563ac0e991
-xformers==0.0.29.post2 ; platform_machine == 'x86_64' and sys_platform == 'linux' \
-    --hash=sha256:0d0eb14db56cf08ec3fb9cb36ed5e98de1303411571539ca4dc080c5861e2744 \
-    --hash=sha256:6ca3d1a6db6f2abff25c1154adee96987f77f4dfd5141771805afa5fc13e9395
+xformers==0.0.29.post3; platform_machine == 'x86_64' and sys_platform == 'linux' \
+    --hash=sha256:00f2dfd94c894ff6372e21bee3f09e96bce75b55649df366649c43f049eb7a1e \
+    --hash=sha256:08fa92f3e06372c4ce2a5306c54ae3d4a3a399fc7e24e02aac3761112ec3aeed \
+    --hash=sha256:0b77c67ecc3c9fdd8a0e4399e675adf12e2ff40285e00974cca2d09108157f60 \
+    --hash=sha256:14cb310fa78fdbe68772ce55e624b6a75d5766b2450030da49baa61112b801f1 \
+    --hash=sha256:34f13d69ad9404e44ae11169e99842c3fccdc2c75b1fc4831a70c78392d990db \
+    --hash=sha256:3706eca371767ff9709595185910d809fc817ec3cf4234ef44d70d2b8844d7e2 \
+    --hash=sha256:59c64379c015f36eb69947f1ee559a0ac8742159ef3d9b8e5a6d1519806d2101 \
+    --hash=sha256:9ce9b96fbb3032be21e038e37b4bd6508e191c38561e99698204abd4acd1fa98 \
+    --hash=sha256:bbf2f500dfdbcf4649bf568cc2c9f434399f704dc4064fd1fbdbef2b524a8139
 xgrammar==0.1.16 ; platform_machine == 'aarch64' or platform_machine == 'x86_64' \
     --hash=sha256:2301413a374f11add07843dfb49050f27beae89a4be7e0ffd454c08cf302412c \
     --hash=sha256:2d75e6501f55368462b4d61ce0fb6a65c587782faa7319f48f49a8c444b4245f \
