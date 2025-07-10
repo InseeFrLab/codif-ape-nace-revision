@@ -153,7 +153,7 @@ def process_subset(data: pd.DataFrame, third: Optional[int]) -> pd.DataFrame:
     subset_size = len(data) // 3
     start_idx = subset_size * (third - 1)
     end_idx = subset_size * third if third != 3 else len(data)
-    return data.iloc[start_idx:end_idx]
+    return data.iloc[start_idx:end_idx].reset_index(drop=True)
 
 
 def fetch_mapping() -> Any:
