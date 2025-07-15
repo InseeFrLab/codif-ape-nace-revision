@@ -31,9 +31,21 @@ class EncodeStrategy(ABC):
         self.fs = get_file_system()
         self.mapping = fetch_mapping()
         self.generation_model = generation_model
+
+        model_args = MODEL_TO_ARGS.get(self.generation_model, {}).copy()
+
+        # add mistral specific args
+        if self.generation_model.startswith("mistralai"):
+            mistral_args = {
+                "tokenizer_mode": "mistral",
+                "config_format": "mistral",
+                "load_format": "mistral",
+            }
+            model_args.update(mistral_args)
+
         self.llm = LLM(
-            model=f"{self.generation_model}",
-            **MODEL_TO_ARGS.get(self.generation_model, {}),
+            model=self.generation_model,
+            **model_args,
         )
         self.tokenizer = self.llm.get_tokenizer()
         self.response_format: Optional[BaseModel] = None
@@ -109,7 +121,13 @@ class EncodeStrategy(ABC):
             return self.response_format(codable=False, nace2025=None, confidence=0.0)
 
         # We get the tokenized predicted NACE2025 code
-        target_ids = self.tokenizer(parsed.nace2025).get("input_ids")
+        target_ids = (
+            self.tokenizer(parsed.nace2025)
+            .to_dict()
+            .get("input_ids")  # We need to deal with custom tokenizer (MistralAI...)
+            if hasattr(self.tokenizer(parsed.nace2025), "to_dict")
+            else self.tokenizer(parsed.nace2025).get("input_ids")
+        )
         logprobs_tensor = self.extract_sequence_logprobs(output.outputs[0].logprobs, target_ids)
 
         # We set the confidence score based on the logprobs
