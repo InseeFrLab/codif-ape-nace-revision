@@ -66,7 +66,7 @@ class CAGStrategy(EncodeStrategy):
         )
         # super().__init__(client=self.llm, generation_model=self.generation_model)
 
-    async def get_prompts(self, data: pd.DataFrame) -> List[List[Dict]]:
+    async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
         tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
         return await tqdm.gather(*tasks)
 

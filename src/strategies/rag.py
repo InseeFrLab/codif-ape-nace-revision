@@ -15,6 +15,7 @@ from constants.llm import (
     TEMPERATURE,
 )
 from constants.paths import URL_SIRENE4_AMBIGUOUS_RAG
+from utils.data import load_prompts, save_prompts
 from vector_db.loading import get_retriever
 
 from .base import EncodeStrategy
@@ -66,9 +67,14 @@ class RAGStrategy(EncodeStrategy):
             guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
         )
 
-    async def get_prompts(self, data: pd.DataFrame):
-        tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
-        return await tqdm.gather(*tasks)
+    async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
+        if load_prompts_from_file:
+            prompts = load_prompts()
+        else:
+            tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
+            prompts = await tqdm.gather(*tasks)
+            save_prompts(prompts)
+        return prompts
 
     @property
     def output_path(self):

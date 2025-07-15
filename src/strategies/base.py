@@ -51,7 +51,7 @@ class EncodeStrategy(ABC):
         self.response_format: Optional[BaseModel] = None
 
     @abstractmethod
-    def get_prompts(self, data: pd.DataFrame) -> List[List[Dict]]:
+    def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
         """
         Each strategy defines how it builds prompts.
         """

@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 import duckdb
 import pandas as pd
@@ -11,6 +11,7 @@ from constants.paths import (
     URL_EXPLANATORY_NOTES,
     URL_GROUND_TRUTH,
     URL_MAPPING_TABLE,
+    URL_PROMPTS_RAG,
     URL_SIRENE4_EXTRACTION,
 )
 from mappings.mappings import get_mapping
@@ -242,3 +243,39 @@ def get_ground_truth() -> pd.DataFrame:
         return load_data_from_s3(query)
     except Exception as e:
         raise RuntimeError(f"Error loading ground truth data: {e}")
+
+
+def prompts_to_df(prompts: List[List[Dict]]) -> pd.DataFrame:
+    rows = []
+    for conversation in prompts:
+        row = {}
+        for message in conversation:
+            role = message["role"]
+            row[f"{role}_content"] = message["content"]
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def df_to_prompts(df: pd.DataFrame) -> List[List[Dict]]:
+    prompt_list = []
+    for _, row in df.iterrows():
+        conversation = []
+        for col in df.columns:
+            role = col.replace("_content", "")
+            content = row[col]
+            conversation.append({"role": role, "content": content})
+        prompt_list.append(conversation)
+    return prompt_list
+
+
+def save_prompts(prompts: List[List[Dict]]):
+    fs = get_file_system()
+    prompts_df = prompts_to_df(prompts)
+    prompts_df.to_parquet(URL_PROMPTS_RAG.format(collection=os.getenv("COLLECTION_NAME")), filesystem=fs)
+
+
+def load_prompts() -> List[List[Dict]]:
+    fs = get_file_system()
+    prompts_df = pd.read_parquet(URL_PROMPTS_RAG.format(collection=os.getenv("COLLECTION_NAME")), filesystem=fs)
+    prompts = df_to_prompts(prompts_df)
+    return prompts

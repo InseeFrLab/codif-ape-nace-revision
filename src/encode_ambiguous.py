@@ -7,6 +7,7 @@ import mlflow
 import config
 from constants.paths import URL_SIRENE4_EXTRACTION
 from evaluation.evaluator import Evaluator
+from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
 from strategies.rag import RAGStrategy
 from utils.data import get_ambiguous_data
@@ -14,13 +15,20 @@ from utils.data import get_ambiguous_data
 config.setup()
 
 
-async def run_encode(strategy_cls, experiment_name, run_name, llm_name, third):
+async def run_encode(
+    strategy_cls: EncodeStrategy,
+    experiment_name: str,
+    run_name: str,
+    llm_name: str,
+    third: int,
+    prompts_from_file: bool,
+):
     strategy = strategy_cls(
         generation_model=llm_name,
     )
     data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
 
-    prompts = await strategy.get_prompts(data)
+    prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
 
     mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
     mlflow.set_experiment(experiment_name)
@@ -57,8 +65,9 @@ if __name__ == "__main__":
     parser.add_argument("--strategy", choices=["rag", "cag"], required=True)
     parser.add_argument("--experiment_name", type=str, default="Test")
     parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument("--llm_name", type=str, default="Qwen/Qwen2.5-0.5B")
+    parser.add_argument("--llm_name", type=str, default="Qwen/Qwen3-0.6B")
     parser.add_argument("--third", type=int, default=None)
+    parser.add_argument("--prompts_from_file", action="store_true")
 
     args = parser.parse_args()
 
@@ -76,5 +85,6 @@ if __name__ == "__main__":
             args.run_name,
             args.llm_name,
             args.third,
+            args.prompts_from_file,
         )
     )
