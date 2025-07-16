@@ -122,11 +122,9 @@ class EncodeStrategy(ABC):
 
         # We get the tokenized predicted NACE2025 code
         target_ids = (
-            self.tokenizer(parsed.nace2025)
-            .to_dict()
-            .get("input_ids")  # We need to deal with custom tokenizer (MistralAI...)
-            if hasattr(self.tokenizer(parsed.nace2025), "to_dict")
-            else self.tokenizer(parsed.nace2025).get("input_ids")
+            self.tokenizer(parsed.nace2025).get("input_ids")
+            if isinstance(self.tokenizer(parsed.nace2025), dict)
+            else self.tokenizer(parsed.nace2025).input_ids  # We need to deal with custom tokenizer (MistralAI...)
         )
         logprobs_tensor = self.extract_sequence_logprobs(output.outputs[0].logprobs, target_ids)
 
