@@ -64,7 +64,6 @@ class CAGStrategy(EncodeStrategy):
             logprobs=1,
             guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
         )
-        # super().__init__(client=self.llm, generation_model=self.generation_model)
 
     async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
         tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
