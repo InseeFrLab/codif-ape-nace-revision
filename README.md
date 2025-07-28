@@ -120,8 +120,8 @@ This project is licensed under the **Apache License 2.0**. See the [LICENSE](LIC
 
 ## TODO
 
-Mieux versionner les prompts qui sont sauvegardé dans s3. Idealement il faudrait versionner via la collection de la base de données + la version du prompt RAG de langfuse
-améliorer les embeddings (faut il garder les notes exlicatives en entier pour faire la similarity search ?)
-implementer le reranker (celui de qwen probablement)
-Inclure des règles métiers dans les prompts
-Inclure des règles code spécifique dans le cas du CAG. (Si LMNP alors on explique ce qui fait la distinction entre les deux code -- cf le fichier de @Nathan) --> Du coup inclure des variables annexes pour aider à départager certaines fois ?
+1. Mieux versionner les prompts qui sont sauvegardé dans s3. Idealement il faudrait versionner via la collection de la base de données + la version du prompt RAG de langfuse
+2. améliorer les embeddings (faut il garder les notes exlicatives en entier pour faire la similarity search ?)
+3. implementer le reranker (celui de qwen probablement)
+4. Inclure des règles métiers dans les prompts
+5. Inclure des règles code spécifique dans le cas du CAG. (Si LMNP alors on explique ce qui fait la distinction entre les deux code -- cf le fichier de @Nathan) --> Du coup inclure des variables annexes pour aider à départager certaines fois ?
