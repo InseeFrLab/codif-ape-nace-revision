@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class RAGResponse(BaseModel):
-    """Represents a response model for classification code assignment."""
+    """Represents the RAG response model for classification code assignment."""
 
     codable: bool = Field(
         description="""True if enough information is provided to decide classification code, False otherwise."""
@@ -77,12 +77,26 @@ class RAGStrategy(EncodeStrategy):
         return prompts
 
     @property
-    def output_path(self):
+    def output_path(self) -> str:
+        """
+        Returns a Parquet output path template including model name and timestamp.
+        Placeholders {i} and {third} must be filled later.
+        """
         date = datetime.now().strftime("%Y-%m-%d--%H:%M")
         return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{self.generation_model}/part-{{i}}-{{third}}--{date}.parquet"
 
     # TODO: implement a method that create prompt and saves it to s3 in parquet and load it back when specified
-    async def create_prompt(self, row: Dict[str, Any], top_k: int = 5) -> Dict:
+    async def create_prompt(self, row: Dict[str, Any], top_k: int = 5) -> List[Dict]:
+        """
+        Creates a prompt from a data row by retrieving similar documents.
+
+        Args:
+            row: A dictionary representing a single activity description row.
+            top_k: Number of top documents to retrieve based on similarity.
+
+        Returns:
+            Filled prompt fields ready to be used for generation.
+        """
         activity = self._format_activity_description(row)
         query = self.prompt_template_retriever.compile(
             activity_description=activity,
@@ -97,6 +111,17 @@ class RAGStrategy(EncodeStrategy):
         )
 
     def _format_documents(self, docs: List[Document]) -> Tuple[str, str]:
+        """
+        Formats retrieved documents into two string representations.
+
+        Args:
+            docs: A list of LangChain Document objects with metadata.
+
+        Returns:
+            A tuple of:
+                - A formatted string containing document content blocks.
+                - A comma-separated list of classification codes.
+        """
         proposed_codes = "\n\n".join(f"========\n{doc.page_content}" for doc in docs)
         list_codes = ", ".join(f"'{doc.metadata['code']}'" for doc in docs)
         return proposed_codes, list_codes
