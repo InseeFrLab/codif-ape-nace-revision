@@ -150,6 +150,9 @@ def process_subset(data: pd.DataFrame, third: Optional[int]) -> pd.DataFrame:
     """Process only a subset of the data based on the 'third' argument."""
     if third is None:
         return data
+    
+    if not isinstance(third, int) or third not in {1, 2, 3}:
+        raise ValueError("Parameter 'third' must be an integer in {1, 2, 3}.")
 
     subset_size = len(data) // 3
     start_idx = subset_size * (third - 1)
@@ -176,7 +179,7 @@ def fetch_mapping() -> Any:
     return mapping_ambiguous
 
 
-def get_ambiguous_data(mapping: Any, third: bool, only_annotated: bool = False) -> pd.DataFrame:
+def get_ambiguous_data(mapping: Any, third: Optional[int], only_annotated: bool = False) -> pd.DataFrame:
     """
     Loads and processes data from multiple sources.
 
