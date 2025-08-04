@@ -11,8 +11,8 @@ config.setup()
 logger = logging.getLogger(__name__)
 
 
-def main(collection_name: str):
-    labels = fetch_nace2025_labels()
+def main(collection_name: str, excluded_fields: list[str] | None = None):
+    labels = fetch_nace2025_labels(excluded_fields)
 
     # Load documents
     docs = DataFrameLoader(labels, page_content_column="content").load()
@@ -26,4 +26,5 @@ def main(collection_name: str):
 
 
 if __name__ == "__main__":
-    main(collection_name=os.getenv("COLLECTION_NAME"))
+    main(collection_name="embeddings_qwen_light", excluded_fields=["include", "not_include", "notes"])
+    # main(collection_name=os.getenv("COLLECTION_NAME"))
