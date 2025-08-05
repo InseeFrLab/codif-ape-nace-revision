@@ -3,14 +3,14 @@ import os
 import duckdb
 import pandas as pd
 
-from src.constants.paths import (
+from constants.paths import (
     URL_EXPLANATORY_NOTES,
     URL_MAPPING_TABLE,
     URL_SIRENE4_EXTRACTION,
     URL_SIRENE4_UNIVOCAL,
 )
-from src.mappings.mappings import get_mapping
-from src.utils.cache_models import get_file_system
+from mappings.mappings import get_mapping
+from utils.data import get_file_system
 
 
 def encore_univoque():
