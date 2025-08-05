@@ -1,19 +1,19 @@
 # Not UP-TO-DATE
+# Adapt URL_SIRENE4_AMBIGUOUS_RAG/URL_SIRENE4_AMBIGUOUS_CAG
 
 import pandas as pd
 import pyarrow.parquet as pq
 
-from src.constants.paths import (
+from constants.paths import (
     URL_EXPLANATORY_NOTES,
     URL_GROUND_TRUTH,
     URL_MAPPING_TABLE,
-    URL_SIRENE4_AMBIGUOUS,
+    URL_SIRENE4_AMBIGUOUS_CAG,
     URL_SIRENE4_AMBIGUOUS_FINAL,
 )
-from src.mappings.mappings import get_mapping
-from src.utils.cache_models import get_file_system
-from src.utils.data import merge_dataframes
-from src.utils.strategies import (
+from mappings.mappings import get_mapping
+from utils.data import get_file_system, merge_dataframes
+from utils.strategies import (
     get_model_agreement_stats,
     select_labels_cascade,
     select_labels_voting,
@@ -49,7 +49,7 @@ MODEL_TO_USE = {
 df_dict = {}
 for llm_name in MODEL_TO_USE.keys():
     dataset = pq.ParquetDataset(
-        f"{URL_SIRENE4_AMBIGUOUS.replace('s3://', '')}/{llm_name}",
+        f"{URL_SIRENE4_AMBIGUOUS_CAG.replace('s3://', '')}/{llm_name}",
         filesystem=fs,
     )
     df_dict[llm_name] = (
