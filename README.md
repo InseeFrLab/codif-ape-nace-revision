@@ -53,7 +53,7 @@ uv run pre-commit install
 Before running the script download the model and put it in cache using the huggingface CLI which is faster than vllm to download the model.
 
 ```bash
-export MODEL_NAME=Qwen/Qwen2.5-0.5B
+export MODEL_NAME=Qwen/Qwen3-0.6B
 uv run huggingface-cli download $MODEL_NAME
 ```
 
@@ -78,7 +78,7 @@ uv run src/encode_unambiguous.py
 For **ambiguous** classification using an LLM:
 
 ```bash
-uv run src/encode_ambiguous.py --experiment_name NACE2025_DATASET --llm_name Qwen/Qwen3-0.6B
+uv run src/encode_ambiguous.py --strategy rag --experiment_name NACE2025_DATASET --llm_name Qwen/Qwen3-0.6B --third 1
 ```
 
 ### 🔬 3. Evaluate Classification Strategies

@@ -14,7 +14,6 @@ from utils.data import get_ambiguous_data
 
 config.setup()
 
-
 async def run_encode(
     strategy_cls: EncodeStrategy,
     experiment_name: str,
@@ -27,41 +26,41 @@ async def run_encode(
         generation_model=llm_name,
     )
     data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
-    data = data.sample(n=200, random_state=1)
+    #data = data.sample(n=200, random_state=1)
 
     import time
     start_time = time.time()
     prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
     print(f"Total time: {time.time() - start_time}")
 
-    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
-    mlflow.set_experiment(experiment_name)
-    with mlflow.start_run(run_name=run_name):
-        outputs = strategy.call_llm(prompts, strategy.sampling_params)
+    # mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+    # mlflow.set_experiment(experiment_name)
+    # with mlflow.start_run(run_name=run_name):
+    #     outputs = strategy.call_llm(prompts, strategy.sampling_params)
 
-        processed_outputs = strategy.process_outputs(outputs)
+    #     processed_outputs = strategy.process_outputs(outputs)
 
-        results = data.merge(processed_outputs, left_index=True, right_index=True)
+    #     results = data.merge(processed_outputs, left_index=True, right_index=True)
 
-        output_path = strategy.save_results(results, third)
+    #     output_path = strategy.save_results(results, third)
 
-        metrics = Evaluator().evaluate(results, prompts)
+    #     metrics = Evaluator().evaluate(results, prompts)
 
-        # Log MLflow parameters and metrics
-        mlflow.log_params(
-            {
-                "LLM_MODEL": llm_name,
-                "TEMPERATURE": strategy.sampling_params.temperature,
-                "input_path": URL_SIRENE4_EXTRACTION,
-                "output_path": output_path,
-                "num_coded": results["codable"].sum(),
-                "num_not_coded": len(results) - results["codable"].sum(),
-                "pct_not_coded": round((len(results) - results["codable"].sum()) / len(results) * 100, 2),
-            }
-        )
+    #     # Log MLflow parameters and metrics
+    #     mlflow.log_params(
+    #         {
+    #             "LLM_MODEL": llm_name,
+    #             "TEMPERATURE": strategy.sampling_params.temperature,
+    #             "input_path": URL_SIRENE4_EXTRACTION,
+    #             "output_path": output_path,
+    #             "num_coded": results["codable"].sum(),
+    #             "num_not_coded": len(results) - results["codable"].sum(),
+    #             "pct_not_coded": round((len(results) - results["codable"].sum()) / len(results) * 100, 2),
+    #         }
+    #     )
 
-        for metric, value in metrics.items():
-            mlflow.log_metric(metric, value)
+    #     for metric, value in metrics.items():
+    #         mlflow.log_metric(metric, value)
 
 
 if __name__ == "__main__":
