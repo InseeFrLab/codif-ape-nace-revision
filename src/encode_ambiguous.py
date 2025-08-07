@@ -27,9 +27,10 @@ async def run_encode(
         generation_model=llm_name,
     )
     data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
-    data = data.sample(n=200, random_state=1)
+    # data = data.sample(n=200, random_state=1)
 
     import time
+
     start_time = time.time()
     prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
     print(f"Total time: {time.time() - start_time}")

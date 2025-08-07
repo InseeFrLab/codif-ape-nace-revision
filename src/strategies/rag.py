@@ -1,8 +1,8 @@
+import asyncio
 import logging
 import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-import asyncio
 
 import pandas as pd
 from langchain.schema import Document
@@ -98,9 +98,9 @@ class RAGStrategy(EncodeStrategy):
         Returns:
             Filled prompt fields ready to be used for generation.
         """
-        #TODO: 16 as a parameter
+        # TODO: 16 as a parameter
         try:
-            async with asyncio.Semaphore(16):
+            async with asyncio.Semaphore(4):
                 activity = self._format_activity_description(row)
                 query = self.prompt_template_retriever.compile(
                     activity_description=activity,

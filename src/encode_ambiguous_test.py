@@ -1,18 +1,16 @@
 import argparse
 import asyncio
 import os
-
-import mlflow
+import logging
 
 import config
-from constants.paths import URL_SIRENE4_EXTRACTION
-from evaluation.evaluator import Evaluator
 from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
 from strategies.rag import RAGStrategy
 from utils.data import get_ambiguous_data
 
 config.setup()
+
 
 async def run_encode(
     strategy_cls: EncodeStrategy,
@@ -22,17 +20,25 @@ async def run_encode(
     third: int,
     prompts_from_file: bool,
 ):
+    logging.info("Define strategy ==========================")
     strategy = strategy_cls(
         generation_model=llm_name,
     )
+    logging.info("Use get_ambiguous_data ==========================")
     data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
-    #data = data.sample(n=200, random_state=1)
+    #data = data.sample(n=50, random_state=1)
+    data_length = len(data)
+    logging.info(f"Must proceed {data_length} prompts")
 
+    logging.info("Get prompts (retrieval) ==========================")
     import time
+
     start_time = time.time()
     prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
     print(f"Total time: {time.time() - start_time}")
 
+    logging.info("Prompts retrieved !!! ==========================")
+    
     # mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
     # mlflow.set_experiment(experiment_name)
     # with mlflow.start_run(run_name=run_name):
