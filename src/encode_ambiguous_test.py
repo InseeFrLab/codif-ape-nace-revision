@@ -26,7 +26,8 @@ async def run_encode(
     )
     logging.info("Use get_ambiguous_data ==========================")
     data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
-    #data = data.sample(n=50, random_state=1)
+    data = data.sample(n=50, random_state=1)
+
     data_length = len(data)
     logging.info(f"Must proceed {data_length} prompts")
 
@@ -80,6 +81,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # args_list = [
+    #     "--strategy", "rag",
+    #     "--experiment_name", "NACE2025_DATASET",
+    #     "--llm_name", "Qwen/Qwen2.5-0.5B", #"Qwen/Qwen3-0.6B"
+    #     "--third", "1"
+    # ]
+    # args = parser.parse_args(args_list)
+
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
 
     STRATEGY_MAP = {
@@ -89,11 +98,21 @@ if __name__ == "__main__":
 
     asyncio.run(
         run_encode(
-            STRATEGY_MAP[args.strategy],
-            args.experiment_name,
-            args.run_name,
-            args.llm_name,
-            args.third,
-            args.prompts_from_file,
+            strategy_cls=STRATEGY_MAP[args.strategy],
+            experiment_name=args.experiment_name,
+            run_name=args.run_name,
+            llm_name=args.llm_name,
+            third=args.third,
+            prompts_from_file=args.prompts_from_file,
         )
     )
+
+
+    # strategy_cls=STRATEGY_MAP[args.strategy]
+    # experiment_name=args.experiment_name
+    # run_name=args.run_name
+    # llm_name=args.llm_name
+    # third=args.third
+    # prompts_from_file=args.prompts_from_file
+
+
