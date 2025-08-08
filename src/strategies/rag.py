@@ -52,13 +52,17 @@ class RAGStrategy(EncodeStrategy):
     def __init__(
         self,
         generation_model: str = "Qwen/Qwen2.5-0.5B",
+        prompt_name: str = "rag-classifier",
+        prompt_label: str = "production",
         reranker_model: str = None,
     ):
         super().__init__(generation_model)
         self.response_format = RAGResponse
         self.reranker_model = reranker_model
         self.db = get_retriever(os.getenv("COLLECTION_NAME"), self.reranker_model)
-        self.prompt_template = Langfuse().get_prompt("rag-classifier", label="production")
+        self.prompt_name = prompt_name
+        self.prompt_label = prompt_label
+        self.prompt_template = Langfuse().get_prompt(self.prompt_name, label=self.prompt_label)
         self.prompt_template_retriever = Langfuse().get_prompt("retriever", label="production")
         self.sampling_params = SamplingParams(
             max_tokens=MAX_NEW_TOKEN,
@@ -71,11 +75,11 @@ class RAGStrategy(EncodeStrategy):
 
     async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
         if load_prompts_from_file:
-            prompts = load_prompts()
+            prompts = load_prompts(self.prompt_name, self.prompt_label)
         else:
             tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
             prompts = await tqdm.gather(*tasks)
-            save_prompts(prompts)
+            save_prompts(prompts, self.prompt_name, self.prompt_label)
         return prompts
 
     @property

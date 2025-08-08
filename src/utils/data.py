@@ -150,7 +150,7 @@ def process_subset(data: pd.DataFrame, third: Optional[int]) -> pd.DataFrame:
     """Process only a subset of the data based on the 'third' argument."""
     if third is None:
         return data
-    
+
     if not isinstance(third, int) or third not in {1, 2, 3}:
         raise ValueError("Parameter 'third' must be an integer in {1, 2, 3}.")
 
@@ -271,14 +271,40 @@ def df_to_prompts(df: pd.DataFrame) -> List[List[Dict]]:
     return prompt_list
 
 
-def save_prompts(prompts: List[List[Dict]]):
+def save_prompts(prompts: List[List[Dict]], prompt_name: str = "", prompt_label: str = "") -> None:
+    """Save prompts to a Parquet file.
+
+    Args:
+        prompts: List of conversations to save
+        prompt_name: Name of the Langfuse prompt
+        prompt_label: Label for the Langfuse prompt
+    """
     fs = get_file_system()
-    prompts_df = prompts_to_df(prompts)
-    prompts_df.to_parquet(URL_PROMPTS_RAG.format(collection=os.getenv("COLLECTION_NAME")), filesystem=fs)
+    prompts_df: pd.DataFrame = prompts_to_df(prompts)
+    prompts_df.to_parquet(
+        URL_PROMPTS_RAG.format(
+            collection=os.getenv("COLLECTION_NAME"), prompt_name=prompt_name, prompt_label=prompt_label
+        ),
+        filesystem=fs,
+    )
 
 
-def load_prompts() -> List[List[Dict]]:
+def load_prompts(prompt_name: str = "", prompt_label: str = "") -> List[List[Dict]]:
+    """Load prompts from a Parquet file.
+
+    Args:
+        prompt_name: Name of the Langfuse prompt
+        prompt_label: Label for the Langfuse prompt
+
+    Returns:
+        List of conversations loaded from the file
+    """
     fs = get_file_system()
-    prompts_df = pd.read_parquet(URL_PROMPTS_RAG.format(collection=os.getenv("COLLECTION_NAME")), filesystem=fs)
+    prompts_df = pd.read_parquet(
+        URL_PROMPTS_RAG.format(
+            collection=os.getenv("COLLECTION_NAME"), prompt_name=prompt_name, prompt_label=prompt_label
+        ),
+        filesystem=fs,
+    )
     prompts = df_to_prompts(prompts_df)
     return prompts
