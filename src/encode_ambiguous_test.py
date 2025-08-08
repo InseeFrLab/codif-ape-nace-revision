@@ -1,6 +1,5 @@
 # uv run src/encode_ambiguous_test.py --strategy rag --experiment_name NACE2025_DATASET --llm_name Qwen/Qwen3-0.6B --third 1 --sample_size 50
 
-import argparse
 import asyncio
 import logging
 import os
@@ -10,9 +9,11 @@ from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
 from strategies.rag import RAGStrategy
 from utils.data import get_ambiguous_data
+import mlflow
+from constants.paths import URL_SIRENE4_EXTRACTION
+from evaluation.evaluator import Evaluator
 
 config.setup()
-
 
 async def run_encode(
     strategy_cls: EncodeStrategy,
@@ -50,37 +51,39 @@ async def run_encode(
 
     logging.info("Prompts retrieved !!! ==========================")
 
-    # mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
-    # mlflow.set_experiment(experiment_name)
-    # with mlflow.start_run(run_name=run_name):
-    #     outputs = strategy.call_llm(prompts, strategy.sampling_params)
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+    mlflow.set_experiment(experiment_name)
+    with mlflow.start_run(run_name=run_name):
+        outputs = strategy.call_llm(prompts, strategy.sampling_params)
 
-    #     processed_outputs = strategy.process_outputs(outputs)
+        processed_outputs = strategy.process_outputs(outputs)
 
-    #     results = data.merge(processed_outputs, left_index=True, right_index=True)
+        results = data.merge(processed_outputs, left_index=True, right_index=True)
 
-    #     output_path = strategy.save_results(results, third)
+        output_path = strategy.save_results(results, third)
 
-    #     metrics = Evaluator().evaluate(results, prompts)
+        metrics = Evaluator().evaluate(results, prompts)
+        metrics["num_coded"] = results["codable"].sum()
+        metrics["num_not_coded"] = len(results) - results["codable"].sum()
+        metrics["pct_not_coded"] = round((len(results) - results["codable"].sum()) / len(results) * 100, 2)
 
-    #     # Log MLflow parameters and metrics
-    #     mlflow.log_params(
-    #         {
-    #             "LLM_MODEL": llm_name,
-    #             "TEMPERATURE": strategy.sampling_params.temperature,
-    #             "input_path": URL_SIRENE4_EXTRACTION,
-    #             "output_path": output_path,
-    #             "num_coded": results["codable"].sum(),
-    #             "num_not_coded": len(results) - results["codable"].sum(),
-    #             "pct_not_coded": round((len(results) - results["codable"].sum()) / len(results) * 100, 2),
-    #         }
-    #     )
+        # Log MLflow parameters and metrics
+        mlflow.log_params(
+            {
+                "LLM_MODEL": llm_name,
+                "TEMPERATURE": strategy.sampling_params.temperature,
+                "input_path": URL_SIRENE4_EXTRACTION,
+                "output_path": output_path,
+                "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
+            }
+        )
 
-    #     for metric, value in metrics.items():
-    #         mlflow.log_metric(metric, value)
-
+        for metric, value in metrics.items():
+            mlflow.log_metric(metric, value)
 
 if __name__ == "__main__":
+    import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategy", choices=["rag", "cag"], required=True)
     parser.add_argument("--experiment_name", type=str, default="Test")
@@ -90,7 +93,7 @@ if __name__ == "__main__":
     parser.add_argument("--prompts_from_file", action="store_true")
     parser.add_argument("--prompt_name", type=str, default="rag-classifier")
     parser.add_argument("--prompt_label", type=str, default="production")
-    parser.add_argument("--sample_size", type=int, default=50)
+    parser.add_argument("--sample_size", type=int, default=None)
 
     args = parser.parse_args()
 
