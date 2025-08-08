@@ -26,5 +26,7 @@ def main(collection_name: str, excluded_fields: list[str] | None = None):
 
 
 if __name__ == "__main__":
-    main(collection_name="embeddings_qwen_light", excluded_fields=["include", "not_include", "notes"])
+    # main(collection_name="embeddings_qwen_semi_light", excluded_fields=["not_include", "notes"])
+    # main(collection_name="embeddings_qwen_light", excluded_fields=["include", "not_include", "notes"])
+    main(collection_name="embeddings_qwen")
     # main(collection_name=os.getenv("COLLECTION_NAME"))
