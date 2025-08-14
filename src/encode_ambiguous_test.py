@@ -3,15 +3,17 @@
 import asyncio
 import logging
 import os
+import time
+
+import mlflow
 
 import config
+from constants.paths import URL_SIRENE4_EXTRACTION
+from evaluation.evaluator import Evaluator
 from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
 from strategies.rag import RAGStrategy
 from utils.data import get_ambiguous_data
-import mlflow
-from constants.paths import URL_SIRENE4_EXTRACTION
-from evaluation.evaluator import Evaluator
 
 config.setup()
 
@@ -42,12 +44,12 @@ async def run_encode(
     logging.info(f"Must proceed {data_length} prompts")
 
     logging.info("Get prompts (retrieval) ==========================")
-    import time
 
     start_time = time.time()
     prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
-    print(f"Total time: {time.time() - start_time}")
-    print(f"Nb of promts: {len(prompts)}")
+    retrieval_time_mn = (time.time() - start_time) / 60
+    print(f"Total time for retrieval: {retrieval_time_mn}")
+    print(f"Nb of prompts: {len(prompts)}")
 
     logging.info("Prompts retrieved !!! ==========================")
 
@@ -56,7 +58,10 @@ async def run_encode(
     with mlflow.start_run(run_name=run_name):
         outputs = strategy.call_llm(prompts, strategy.sampling_params)
 
+        start_time = time.time()
         processed_outputs = strategy.process_outputs(outputs)
+        generation_time_mn = time.time() - start_time
+        print(f"Generating time: {generation_time_mn} ===================")
 
         results = data.merge(processed_outputs, left_index=True, right_index=True)
 
@@ -66,6 +71,8 @@ async def run_encode(
         metrics["num_coded"] = results["codable"].sum()
         metrics["num_not_coded"] = len(results) - results["codable"].sum()
         metrics["pct_not_coded"] = round((len(results) - results["codable"].sum()) / len(results) * 100, 2)
+        metrics["retrieval_time_mn"] = round(retrieval_time_mn, 1)
+        metrics["generation_time_mn"] = round(generation_time_mn, 1)
 
         # Log MLflow parameters and metrics
         mlflow.log_params(
@@ -75,6 +82,7 @@ async def run_encode(
                 "input_path": URL_SIRENE4_EXTRACTION,
                 "output_path": output_path,
                 "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
+                "COLLECTION_NAME": os.getenv("COLLECTION_NAME"),
             }
         )
 
@@ -112,6 +120,7 @@ if __name__ == "__main__":
     # args = parser.parse_args(args_list)
 
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
+    assert "COLLECTION_NAME" in os.environ, "Set COLLECTION_NAME"
 
     STRATEGY_MAP = {
         "rag": RAGStrategy,
