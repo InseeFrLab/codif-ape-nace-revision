@@ -12,15 +12,16 @@ class Evaluator:
     based on ground truth and LLM results.
     """
 
-    def evaluate(self, results: pd.DataFrame, prompts: pd.DataFrame) -> dict:
+    def evaluate(self, results: pd.DataFrame, prompts: pd.DataFrame) -> tuple[Dict, pd.DataFrame]:
         """
         Run the full evaluation pipeline.
 
         Args:
-            results_df: DataFrame with model results.
+            results: DataFrame with model results.
             prompts: DataFrame with prompts used.
         Returns:
-            Dictionary with accuracy metrics.
+            - Dictionary with accuracy metrics.
+            - DataFrame containing the merged evaluation data with ground truth, prompt mapping, and results.
         """
         # Step 1: Get ground truth and make sure it is a subset of results
         ground_truth = get_ground_truth()
@@ -44,7 +45,8 @@ class Evaluator:
 
         # Step 6: Compute additional metrics
         metrics = accuracies | {"eval_size": eval_df.shape[0], "mapping_ok": eval_df["mapping_ok"].sum()}
-        return metrics
+        return metrics, eval_df
+
 
     def get_prompt_mapping(self, prompts: List, ground_truth: pd.DataFrame) -> pd.DataFrame:
         """
@@ -56,7 +58,7 @@ class Evaluator:
         mapping = []
         ground_truth_c = ground_truth.copy().reset_index(drop=True)
         for idx, row in enumerate(ground_truth_c.to_dict(orient="records")):
-            text = prompts[idx][1]["content"]
+            text = prompts[idx][1]["content"] # 1 to get "user prompt" dict, not "system prompt" dict
 
             # Retrieve the proposed code from the prompt
             proposed_codes = [c.replace(".", "") for c in re.findall(pattern, text)]

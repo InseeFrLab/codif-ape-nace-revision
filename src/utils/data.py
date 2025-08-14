@@ -228,6 +228,7 @@ def get_ambiguous_data(mapping: Any, third: Optional[int], only_annotated: bool 
 def get_ground_truth() -> pd.DataFrame:
     """
     Retrieves and loads the ground truth data from a Parquet file.
+    Ordered by liasse_numero
 
     Returns:
         pd.DataFrame: A DataFrame with distinct liasse_numero, apet_manual, and NAF2008_code.

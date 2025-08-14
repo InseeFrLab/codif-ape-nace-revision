@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import time
+import tempfile
 
 import mlflow
 
@@ -67,7 +68,7 @@ async def run_encode(
 
         output_path = strategy.save_results(results, third)
 
-        metrics = Evaluator().evaluate(results, prompts)
+        metrics, df_eval = Evaluator().evaluate(results, prompts)
         metrics["num_coded"] = results["codable"].sum()
         metrics["num_not_coded"] = len(results) - results["codable"].sum()
         metrics["pct_not_coded"] = round((len(results) - results["codable"].sum()) / len(results) * 100, 2)
@@ -88,6 +89,11 @@ async def run_encode(
 
         for metric, value in metrics.items():
             mlflow.log_metric(metric, value)
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "df_eval.csv")
+            df_eval.to_csv(file_path, index=False)
+            mlflow.log_artifact(file_path, artifact_path="dataframes")
 
 if __name__ == "__main__":
     import argparse
