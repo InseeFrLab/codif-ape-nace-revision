@@ -1,4 +1,4 @@
-# uv run src/encode_ambiguous_test.py --strategy rag --experiment_name NACE2025_DATASET --llm_name Qwen/Qwen3-0.6B --third 1 --sample_size 50
+# uv run src/encode_ambiguous_test.py --strategy rag --experiment_name NACE2025_DATASET --llm_name Qwen/Qwen3-0.6B --third 1
 
 import asyncio
 import logging

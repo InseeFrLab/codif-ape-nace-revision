@@ -16,6 +16,7 @@ from constants.llm import (
     TEMPERATURE,
 )
 from constants.paths import URL_SIRENE4_AMBIGUOUS_RAG
+from constants.vector_db import MAX_CONCURRENCY
 from utils.data import load_prompts, save_prompts
 from vector_db.loading import get_retriever
 
@@ -71,7 +72,7 @@ class RAGStrategy(EncodeStrategy):
             logprobs=1,
             guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
         )
-        self.semaphore = asyncio.Semaphore(8)  # Max concurrency for API calls
+        self.semaphore = asyncio.Semaphore(MAX_CONCURRENCY)  # Max concurrency for API calls
 
     async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
         if load_prompts_from_file:
