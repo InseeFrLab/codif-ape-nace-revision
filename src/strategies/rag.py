@@ -24,6 +24,14 @@ from .base import EncodeStrategy
 
 logger = logging.getLogger(__name__)
 
+# Deal with Qdrant API temporary disconnections
+import random
+import httpx
+import inspect
+from qdrant_client.http.exceptions import ResponseHandlingException
+MAX_RETRIES = 5
+BASE_DELAY = 2  # secondes
+
 
 class RAGResponse(BaseModel):
     """Represents the RAG response model for classification code assignment."""
@@ -92,7 +100,21 @@ class RAGStrategy(EncodeStrategy):
         date = datetime.now().strftime("%Y-%m-%d--%H:%M")
         return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{self.generation_model}/part-{{i}}-{{third}}--{date}.parquet"
 
-    # TODO: implement a method that create prompt and saves it to s3 in parquet and load it back when specified
+    async def _retry_with_backoff(self, coro, *args, retries=5, backoff_in_seconds=1, **kwargs):
+        if not callable(coro):
+            raise TypeError(f"Expected a callable coroutine, got {type(coro)}")
+        if not inspect.iscoroutinefunction(coro):
+            raise TypeError(f"Expected an async coroutine function, got {coro}")
+
+        for attempt in range(retries):
+            try:
+                return await coro(*args, **kwargs)
+            except Exception as e:
+                wait_time = backoff_in_seconds * (2 ** attempt)
+                print(f"Attempt {attempt+1} failed: {e}. Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+        raise RuntimeError(f"Failed after {retries} retries")
+
     async def create_prompt(self, row: Dict[str, Any], top_k: int = 5) -> List[Dict]:
         """
         Creates a prompt from a data row by retrieving similar documents.
@@ -104,20 +126,21 @@ class RAGStrategy(EncodeStrategy):
         Returns:
             Filled prompt fields ready to be used for generation.
         """
-        try:
-            async with self.semaphore:
-                activity = self._format_activity_description(row)
-                query = self.prompt_template_retriever.compile(
-                    activity_description=activity,
-                )
-                docs = await self.db.asimilarity_search(query, k=top_k)
-                proposed_codes, list_codes = self._format_documents(docs)
-        except Exception as e:
-            print("=====row=======")
-            print(row)
-            print("=====query=======")
-            print(query)
-            raise e
+        # try:
+        async with self.semaphore:
+            activity = self._format_activity_description(row)
+            query = self.prompt_template_retriever.compile(
+                activity_description=activity,
+            )
+            docs = await self._retry_with_backoff(self.db.asimilarity_search, query, k=top_k)
+            # docs = await self.db.asimilarity_search(query, k=top_k)
+            proposed_codes, list_codes = self._format_documents(docs)
+        # except Exception as e:
+        #     print("=====row=======")
+        #     print(row)
+        #     print("=====query=======")
+        #     print(query)
+        #     raise e
 
         return self.prompt_template.compile(
             activity=activity,
