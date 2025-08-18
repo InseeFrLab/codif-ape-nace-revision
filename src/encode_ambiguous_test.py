@@ -22,6 +22,7 @@ async def run_encode(
     strategy_cls: EncodeStrategy,
     experiment_name: str,
     run_name: str,
+    collection_name: str,
     llm_name: str,
     third: int,
     prompts_from_file: bool,
@@ -34,6 +35,7 @@ async def run_encode(
         generation_model=llm_name,
         prompt_name=prompt_name,
         prompt_label=prompt_label,
+        collection_name=collection_name,
     )
     logging.info("Use get_ambiguous_data ==========================")
     data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
@@ -83,7 +85,7 @@ async def run_encode(
                 "input_path": URL_SIRENE4_EXTRACTION,
                 "output_path": output_path,
                 "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
-                "COLLECTION_NAME": os.getenv("COLLECTION_NAME"),
+                "COLLECTION_NAME": collection_name,
             }
         )
 
@@ -95,6 +97,8 @@ async def run_encode(
             df_eval.to_csv(file_path, index=False)
             mlflow.log_artifact(file_path, artifact_path="dataframes")
 
+    print(f"collection_name: {collection_name} ======================")
+
 if __name__ == "__main__":
     import argparse
 
@@ -102,6 +106,7 @@ if __name__ == "__main__":
     parser.add_argument("--strategy", choices=["rag", "cag"], required=True)
     parser.add_argument("--experiment_name", type=str, default="Test")
     parser.add_argument("--run_name", type=str, default=None)
+    parser.add_argument("--collection_name", type=str, default="embeddings_qwen_semi_light")
     parser.add_argument("--llm_name", type=str, default="Qwen/Qwen3-0.6B")
     parser.add_argument("--third", type=int, default=None)
     parser.add_argument("--prompts_from_file", action="store_true")
@@ -126,7 +131,7 @@ if __name__ == "__main__":
     # args = parser.parse_args(args_list)
 
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
-    assert "COLLECTION_NAME" in os.environ, "Set COLLECTION_NAME"
+    #assert "COLLECTION_NAME" in os.environ, "Set COLLECTION_NAME"
 
     STRATEGY_MAP = {
         "rag": RAGStrategy,
@@ -138,6 +143,7 @@ if __name__ == "__main__":
             strategy_cls=STRATEGY_MAP[args.strategy],
             experiment_name=args.experiment_name,
             run_name=args.run_name,
+            collection_name=args.collection_name,
             llm_name=args.llm_name,
             third=args.third,
             prompts_from_file=args.prompts_from_file,
