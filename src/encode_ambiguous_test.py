@@ -40,7 +40,7 @@ async def run_encode(
     logging.info("Use get_ambiguous_data ==========================")
     data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
     if sample_size is not None:
-        data = data.sample(n=sample_size, random_state=1)
+        data = data.head(n=sample_size)
         data = data.reset_index(drop=True)
 
     data_length = len(data)
@@ -49,7 +49,10 @@ async def run_encode(
     logging.info("Get prompts (retrieval) ==========================")
 
     start_time = time.time()
-    prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
+    async def main():
+        prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
+        return prompts
+    prompts = asyncio.run(main())
     retrieval_time_mn = (time.time() - start_time) / 60
     print(f"Total time for retrieval: {retrieval_time_mn}")
     print(f"Nb of prompts: {len(prompts)}")
@@ -114,21 +117,23 @@ if __name__ == "__main__":
     parser.add_argument("--prompt_label", type=str, default="production")
     parser.add_argument("--sample_size", type=int, default=None)
 
-    args = parser.parse_args()
+    #args = parser.parse_args()
 
-    # args_list = [
-    #     "--strategy",
-    #     "rag",
-    #     "--experiment_name",
-    #     "NACE2025_DATASET",
-    #     "--llm_name",
-    #     "Qwen/Qwen3-0.6B",
-    #     "--third",
-    #     "1",
-    #     "--sample_size",
-    #     "50",
-    # ]
-    # args = parser.parse_args(args_list)
+    args_list = [
+        "--strategy",
+        "rag",
+        "--experiment_name",
+        "NACE2025_DATASET",
+        "--collection_name",
+        "embeddings_qwen",
+        "--llm_name",
+        "Qwen/Qwen3-0.6B",
+        "--third",
+        "1",
+        "--sample_size",
+        "15",
+    ]
+    args = parser.parse_args(args_list)
 
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
     #assert "COLLECTION_NAME" in os.environ, "Set COLLECTION_NAME"
@@ -138,27 +143,31 @@ if __name__ == "__main__":
         "cag": CAGStrategy,
     }
 
-    asyncio.run(
-        run_encode(
-            strategy_cls=STRATEGY_MAP[args.strategy],
-            experiment_name=args.experiment_name,
-            run_name=args.run_name,
-            collection_name=args.collection_name,
-            llm_name=args.llm_name,
-            third=args.third,
-            prompts_from_file=args.prompts_from_file,
-            prompt_name=args.prompt_name,
-            prompt_label=args.prompt_label,
-            sample_size=args.sample_size,
-        )
-    )
+    # asyncio.run(
+    #     run_encode(
+    #         strategy_cls=STRATEGY_MAP[args.strategy],
+    #         experiment_name=args.experiment_name,
+    #         run_name=args.run_name,
+    #         collection_name=args.collection_name,
+    #         llm_name=args.llm_name,
+    #         third=args.third,
+    #         prompts_from_file=args.prompts_from_file,
+    #         prompt_name=args.prompt_name,
+    #         prompt_label=args.prompt_label,
+    #         sample_size=args.sample_size,
+    #     )
+    # )
 
-    # strategy_cls = STRATEGY_MAP[args.strategy]
-    # experiment_name = args.experiment_name
-    # run_name = args.run_name
-    # llm_name = args.llm_name
-    # third = args.third
-    # prompts_from_file = args.prompts_from_file
+    strategy_cls = STRATEGY_MAP[args.strategy]
+    experiment_name = args.experiment_name
+    run_name = args.run_name
+    llm_name = args.llm_name
+    third = args.third
+    prompts_from_file = args.prompts_from_file
+    collection_name=args.collection_name
+    prompt_name=args.prompt_name
+    prompt_label=args.prompt_label
+    sample_size=args.sample_size
 
     # async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
     #     tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]

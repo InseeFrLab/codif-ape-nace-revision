@@ -157,6 +157,15 @@ class EncodeStrategy(ABC):
         return torch.full((sequence_length,), float("-inf"))
 
     def process_outputs(self, outputs: List[RequestOutput]) -> pd.DataFrame:
+        """
+        Process a list of LLM outputs into a structured DataFrame.
+
+        Args:
+            outputs: List of RequestOutput objects from the LLM.
+
+        Returns:
+            A pandas DataFrame containing the processed outputs with postprocessing applied.
+        """
         records = [self._process_output(output).model_dump() for output in outputs]
         df = pd.DataFrame.from_records(records)
         return self.postprocess_results(df)
