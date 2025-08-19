@@ -181,16 +181,36 @@ def fetch_mapping() -> Any:
 
 def get_ambiguous_data(mapping: Any, third: Optional[int], only_annotated: bool = False) -> pd.DataFrame:
     """
-    Loads and processes data from multiple sources.
+    Loads and processes data from multiple sources, filtering for ambiguous codes and optionally
+    restricting to annotated records.
+
+    This function constructs a SQL query to retrieve data from a Parquet file containing SIRENE4
+    extraction data, filters for records with ambiguous APET codes (as defined by the mapping),
+    and optionally restricts results to only those records that have corresponding ground truth
+    annotations. The data is then deduplicated and processed to return a subset ("third") if requested.
 
     Args:
-        third (bool): Additional processing flag.
-        only_annotated (bool): Flag to filter only annotated data.
-
+        mapping (Any): A collection of mapping objects that define ambiguous APET codes.
+        third (Optional[int]): If provided (1, 2, or 3), returns only the corresponding third
+            of the data. If None, returns the full dataset.
+        only_annotated (bool): If True, restricts results to only records that have corresponding
+            ground truth annotations. Defaults to False.
     Returns:
-        pd.DataFrame: Processed subset of data.
+        pd.DataFrame: A processed DataFrame containing the filtered and deduplicated data.
+            The DataFrame includes all columns specified in VAR_TO_KEEP, ordered by liasse_numero.
+
+    Raises:
+        RuntimeError: If there is an error loading data from S3 or processing the query.
+        ValueError: If the 'third' parameter is not None, 1, 2, or 3.
+
+    Notes:
+        - The function uses DuckDB to execute the SQL query against S3 storage.
+        - The VAR_TO_KEEP constant defines which columns to include in the final output.
+        - The URL_SIRENE4_EXTRACTION and URL_GROUND_TRUTH constants specify the S3 locations
+          of the source data files.
+        - The process_subset function handles the optional third-based data subsetting.
     """
-    # Construct SQL query
+    # Construct SQL query components
     filter_columns_sql = ", ".join([v for v in VAR_TO_KEEP if v not in {"liasse_numero", "apet_finale"}])
     selected_columns_sql = ", ".join(VAR_TO_KEEP)
     ambiguous_codes = "', '".join([m.code.replace(".", "") for m in mapping])
