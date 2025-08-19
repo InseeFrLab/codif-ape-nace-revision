@@ -10,6 +10,9 @@ from langfuse import Langfuse
 from pydantic import BaseModel, Field, model_validator
 from tqdm.asyncio import tqdm
 from vllm.sampling_params import GuidedDecodingParams, SamplingParams
+from qdrant_client.http.models import SearchRequest
+from qdrant_client.http.models import NamedVector
+    
 
 from constants.llm import (
     MAX_NEW_TOKEN,
@@ -83,13 +86,74 @@ class RAGStrategy(EncodeStrategy):
         )
         self.semaphore = asyncio.Semaphore(MAX_CONCURRENCY)  # Max concurrency for API calls
 
-    async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
+    # async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
+    #     if load_prompts_from_file:
+    #         prompts = load_prompts(self.prompt_name, self.prompt_label)
+    #     else:
+    #         tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
+    #         prompts = await tqdm.gather(*tasks)
+    #         save_prompts(prompts, self.prompt_name, self.prompt_label)
+    #     return prompts
+
+    async def get_prompts(
+        self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5
+    ) -> List[List[Dict]]:
+
         if load_prompts_from_file:
-            prompts = load_prompts(self.prompt_name, self.prompt_label)
-        else:
-            tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
-            prompts = await tqdm.gather(*tasks)
-            save_prompts(prompts, self.prompt_name, self.prompt_label)
+            return load_prompts(self.prompt_name, self.prompt_label)
+
+        rows = data.to_dict(orient="records")
+
+        # 1. Construire toutes les activity descriptions
+        activities = [self._format_activity_description(row) for row in rows]
+
+        # 2. Compiler toutes les queries
+        queries = [
+            self.prompt_template_retriever.compile(activity_description=activity)
+            for activity in activities
+        ]
+
+        # 3. Embedding en batch (beaucoup plus rapide qu'un par un)
+        embeddings = await self.db.embeddings.aembed_documents(queries)
+
+        # 4. Construire une requête batch pour Qdrant
+        search_requests = [
+            SearchRequest(
+                vector=NamedVector(name="Qwen/Qwen3-Embedding-8B", vector=vec),
+                limit=top_k,
+                with_payload=True
+            )
+            for vec in embeddings
+        ]
+        
+
+        # 5. Requête batch au client Qdrant (un seul appel réseau !)
+        client = self.db.client
+        results = client.search_batch(
+            collection_name=strategy.db.collection_name,
+            requests=search_requests,
+        )
+
+        # 6. Construire les prompts avec les docs retrouvés
+        prompts = []
+        for row, activity, docs in zip(rows, activities, results):
+            # docs = List[ScoredPoint] renvoyés par Qdrant
+            proposed_codes, list_codes = self._format_documents([
+                Document(
+                    page_content=d.payload["page_content"],
+                    metadata=d.payload.get("metadata", {}),
+                )
+                for d in docs
+            ])
+            prompt = self.prompt_template.compile(
+                activity=activity,
+                proposed_codes=proposed_codes,
+                list_proposed_codes=list_codes,
+            )
+            prompts.append(prompt)
+
+        # 7. Sauvegarder et retourner
+        save_prompts(prompts, self.prompt_name, self.prompt_label)
         return prompts
 
     @property
