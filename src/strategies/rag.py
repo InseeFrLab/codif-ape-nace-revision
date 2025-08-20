@@ -14,7 +14,6 @@ from qdrant_client.http.models import SearchRequest
 from qdrant_client.http.models import NamedVector
 from math import ceil
     
-
 from constants.llm import (
     MAX_NEW_TOKEN,
     TEMPERATURE,
@@ -22,7 +21,6 @@ from constants.llm import (
 from constants.paths import URL_SIRENE4_AMBIGUOUS_RAG
 from constants.vector_db import MAX_CONCURRENCY
 from utils.data import load_prompts, save_prompts
-from utils.strategies import chunked
 from vector_db.loading import get_retriever
 
 from .base import EncodeStrategy
@@ -91,68 +89,208 @@ class RAGStrategy(EncodeStrategy):
 
 
     async def get_prompts(
-        self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5, batch_size: int = 128,
+        self,
+        data: pd.DataFrame,
+        load_prompts_from_file: bool = False,
+        top_k: int = 5,
+        batch_size: int = 128,
     ) -> List[List[Dict]]:
+        """
+        Generate prompts for each row of the dataframe by retrieving
+        relevant documents from Qdrant and formatting them as chat messages.
 
+        Args:
+            data (pd.DataFrame): Input data containing activity descriptions.
+            load_prompts_from_file (bool): If True, load prompts from disk instead of recomputing.
+            top_k (int): Number of documents to retrieve per query.
+            batch_size (int): Number of queries per batch when calling Qdrant.
+
+        Returns:
+            List[List[Dict]]: A list of conversations, one per row in the dataframe.
+        """
         if load_prompts_from_file:
             return load_prompts(self.prompt_name, self.prompt_label)
 
-        rows = data.to_dict(orient="records")
+        if data.empty:
+            raise ValueError("Input data is empty")
 
-        # 1. Construire toutes les activity descriptions
-        activities = [self._format_activity_description(row) for row in rows]
+        activities, queries = self._prepare_queries(data)
 
-        # 2. Compiler toutes les queries
-        queries = [
-            self.prompt_template_retriever.compile(activity_description=activity)
-            for activity in activities
-        ]
-
-        # 3. Embedding en batch (beaucoup plus rapide qu'un par un)
+        # Embedding queries
         embeddings = await self.db.embeddings.aembed_documents(queries)
 
-        # 4. Construire une requête batch pour Qdrant
+        # Batch search in Qdrant
+        results = self._search_qdrant(embeddings, top_k, batch_size)
+
+        # Build prompts from retrieved docs
+        prompts = self._build_prompts(activities, results)
+
+        # Persist prompts for later reuse
+        save_prompts(prompts, self.prompt_name, self.prompt_label)
+        return prompts
+
+    def _prepare_queries(self, data: pd.DataFrame):
+        """
+        Convert dataframe rows into activity descriptions and queries.
+
+        Args:
+            data (pd.DataFrame): Input dataframe.
+
+        Returns:
+            tuple: (activities, queries)
+                - activities (list[str]): Formatted activity descriptions.
+                - queries (list[str]): Queries compiled for embeddings.
+        """
+        rows = data.to_dict(orient="records")
+        activities = [self._format_activity_description(row) for row in rows]
+        queries = [self.prompt_template_retriever.compile(activity_description=a) for a in activities]
+        return activities, queries
+
+    def _search_qdrant(
+        self,
+        embeddings: List[List[float]],
+        top_k: int,
+        batch_size: int,
+    ):
+        """
+        Run batched search requests in Qdrant.
+
+        Args:
+            embeddings (List[List[float]]): List of embedding vectors.
+            top_k (int): Number of results per query.
+            batch_size (int): Number of queries per request batch.
+
+        Returns:
+            List[List[ScoredPoint]]: Search results grouped by query.
+        """
         search_requests = [
             SearchRequest(
                 vector=NamedVector(name=self.db.vector_name, vector=vec),
                 limit=top_k,
-                with_payload=True
+                with_payload=True,
             )
             for vec in embeddings
         ]
 
-        num_chunks = (len(search_requests) + batch_size - 1) // batch_size  # Calcul du nombre de chunks
-
-        # 5. Requête batch au client Qdrant (un seul appel réseau par batch!)
         results = []
-        for chunk in tqdm(chunked(search_requests, batch_size), total=num_chunks*batch_size, desc="Processing Qdrant requests"):
+        num_chunks = ceil(len(search_requests) / batch_size)
+        for chunk in tqdm(
+            self._chunked(search_requests, batch_size),
+            total=num_chunks,
+            desc="Processing Qdrant requests",
+            unit="batch"
+        ):
             res = self.db.client.search_batch(
                 collection_name=self.collection_name,
                 requests=chunk,
             )
             results.extend(res)
 
-        # 6. Construire les prompts avec les docs retrouvés
-        prompts = []
-        for row, activity, docs in zip(rows, activities, results):
-            # docs = List[ScoredPoint] renvoyés par Qdrant
-            proposed_codes, list_codes = self._format_documents([
+        return results
+
+    def _build_prompts(
+        self,
+        activities: List[str],
+        results,
+    ) -> List[List[Dict]]:
+        """
+        Build final prompts from retrieved documents and activities.
+
+        Args:
+            activities (List[str]): Activity descriptions.
+            results (List[List[ScoredPoint]]): Search results from Qdrant.
+
+        Returns:
+            List[List[Dict]]: Final prompts as chat message dictionaries.
+        """
+        prompts: List[List[Dict]] = []
+        for activity, docs in zip(activities, results):
+            langchain_docs = [
                 Document(
                     page_content=d.payload["page_content"],
                     metadata=d.payload.get("metadata", {}),
                 )
                 for d in docs
-            ])
-            prompt = self.prompt_template.compile(
+            ]
+            proposed_codes, list_codes = self._format_documents(langchain_docs)
+
+            convo: List[Dict] = self.prompt_template.compile(
                 activity=activity,
                 proposed_codes=proposed_codes,
                 list_proposed_codes=list_codes,
             )
-            prompts.append(prompt)
-
-        # 7. Sauvegarder et retourner
-        save_prompts(prompts, self.prompt_name, self.prompt_label)
+            prompts.append(convo)
         return prompts
+
+    @staticmethod
+    def _chunked(seq, size):
+        """Split a list into chunks of given size."""
+        for i in range(0, len(seq), size):
+            yield seq[i : i + size]
+
+    # async def get_prompts(
+    #     self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5, batch_size: int = 128,
+    # ) -> List[List[Dict]]:
+
+    #     if load_prompts_from_file:
+    #         return load_prompts(self.prompt_name, self.prompt_label)
+
+    #     rows = data.to_dict(orient="records")
+
+    #     # 1. Construire toutes les activity descriptions
+    #     activities = [self._format_activity_description(row) for row in rows]
+
+    #     # 2. Compiler toutes les queries
+    #     queries = [
+    #         self.prompt_template_retriever.compile(activity_description=activity)
+    #         for activity in activities
+    #     ]
+
+    #     # 3. Embedding en batch (beaucoup plus rapide qu'un par un)
+    #     embeddings = await self.db.embeddings.aembed_documents(queries)
+
+    #     # 4. Construire une requête batch pour Qdrant
+    #     search_requests = [
+    #         SearchRequest(
+    #             vector=NamedVector(name=self.db.vector_name, vector=vec),
+    #             limit=top_k,
+    #             with_payload=True
+    #         )
+    #         for vec in embeddings
+    #     ]
+
+    #     num_chunks = (len(search_requests) + batch_size - 1) // batch_size  # Calcul du nombre de chunks
+
+    #     # 5. Requête batch au client Qdrant (un seul appel réseau par batch!)
+    #     results = []
+    #     for chunk in tqdm(chunked(search_requests, batch_size), total=num_chunks*batch_size, desc="Processing Qdrant requests"):
+    #         res = self.db.client.search_batch(
+    #             collection_name=self.collection_name,
+    #             requests=chunk,
+    #         )
+    #         results.extend(res)
+
+    #     # 6. Construire les prompts avec les docs retrouvés
+    #     prompts = []
+    #     for row, activity, docs in zip(rows, activities, results):
+    #         # docs = List[ScoredPoint] renvoyés par Qdrant
+    #         proposed_codes, list_codes = self._format_documents([
+    #             Document(
+    #                 page_content=d.payload["page_content"],
+    #                 metadata=d.payload.get("metadata", {}),
+    #             )
+    #             for d in docs
+    #         ])
+    #         prompt = self.prompt_template.compile(
+    #             activity=activity,
+    #             proposed_codes=proposed_codes,
+    #             list_proposed_codes=list_codes,
+    #         )
+    #         prompts.append(prompt)
+
+    #     # 7. Sauvegarder et retourner
+    #     save_prompts(prompts, self.prompt_name, self.prompt_label)
+    #     return prompts
 
     @property
     def output_path(self) -> str:
@@ -177,39 +315,6 @@ class RAGStrategy(EncodeStrategy):
                 print(f"Attempt {attempt+1} failed: {e}. Retrying in {wait_time}s...")
                 await asyncio.sleep(wait_time)
         raise RuntimeError(f"Failed after {retries} retries")
-
-    async def create_prompt(self, row: Dict[str, Any], top_k: int = 5) -> List[Dict]:
-        """
-        Creates a prompt from a data row by retrieving similar documents.
-
-        Args:
-            row: A dictionary representing a single activity description row.
-            top_k: Number of top documents to retrieve based on similarity.
-
-        Returns:
-            Filled prompt fields ready to be used for generation.
-        """
-        # try:
-        async with self.semaphore:
-            activity = self._format_activity_description(row)
-            query = self.prompt_template_retriever.compile(
-                activity_description=activity,
-            )
-            docs = await self._retry_with_backoff(self.db.asimilarity_search, query, k=top_k)
-            # docs = await self.db.asimilarity_search(query, k=top_k)
-            proposed_codes, list_codes = self._format_documents(docs)
-        # except Exception as e:
-        #     print("=====row=======")
-        #     print(row)
-        #     print("=====query=======")
-        #     print(query)
-        #     raise e
-
-        return self.prompt_template.compile(
-            activity=activity,
-            proposed_codes=proposed_codes,
-            list_proposed_codes=list_codes,
-        )
 
     def _format_documents(self, docs: List[Document]) -> Tuple[str, str]:
         """
