@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 from langchain.schema import Document
@@ -13,7 +13,7 @@ from vllm.sampling_params import GuidedDecodingParams, SamplingParams
 from qdrant_client.http.models import SearchRequest
 from qdrant_client.http.models import NamedVector
 from math import ceil
-    
+
 from constants.llm import (
     MAX_NEW_TOKEN,
     TEMPERATURE,
@@ -26,14 +26,6 @@ from vector_db.loading import get_retriever
 from .base import EncodeStrategy
 
 logger = logging.getLogger(__name__)
-
-# Deal with Qdrant API temporary disconnections
-import random
-import httpx
-import inspect
-from qdrant_client.http.exceptions import ResponseHandlingException
-MAX_RETRIES = 5
-BASE_DELAY = 2  # secondes
 
 
 class RAGResponse(BaseModel):
@@ -86,7 +78,6 @@ class RAGStrategy(EncodeStrategy):
             guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
         )
         self.semaphore = asyncio.Semaphore(MAX_CONCURRENCY)  # Max concurrency for API calls
-
 
     async def get_prompts(
         self,
@@ -178,7 +169,7 @@ class RAGStrategy(EncodeStrategy):
             self._chunked(search_requests, batch_size),
             total=num_chunks,
             desc="Processing Qdrant requests",
-            unit="batch"
+            unit="batch",
         ):
             res = self.db.client.search_batch(
                 collection_name=self.collection_name,
@@ -228,70 +219,6 @@ class RAGStrategy(EncodeStrategy):
         for i in range(0, len(seq), size):
             yield seq[i : i + size]
 
-    # async def get_prompts(
-    #     self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5, batch_size: int = 128,
-    # ) -> List[List[Dict]]:
-
-    #     if load_prompts_from_file:
-    #         return load_prompts(self.prompt_name, self.prompt_label)
-
-    #     rows = data.to_dict(orient="records")
-
-    #     # 1. Construire toutes les activity descriptions
-    #     activities = [self._format_activity_description(row) for row in rows]
-
-    #     # 2. Compiler toutes les queries
-    #     queries = [
-    #         self.prompt_template_retriever.compile(activity_description=activity)
-    #         for activity in activities
-    #     ]
-
-    #     # 3. Embedding en batch (beaucoup plus rapide qu'un par un)
-    #     embeddings = await self.db.embeddings.aembed_documents(queries)
-
-    #     # 4. Construire une requête batch pour Qdrant
-    #     search_requests = [
-    #         SearchRequest(
-    #             vector=NamedVector(name=self.db.vector_name, vector=vec),
-    #             limit=top_k,
-    #             with_payload=True
-    #         )
-    #         for vec in embeddings
-    #     ]
-
-    #     num_chunks = (len(search_requests) + batch_size - 1) // batch_size  # Calcul du nombre de chunks
-
-    #     # 5. Requête batch au client Qdrant (un seul appel réseau par batch!)
-    #     results = []
-    #     for chunk in tqdm(chunked(search_requests, batch_size), total=num_chunks*batch_size, desc="Processing Qdrant requests"):
-    #         res = self.db.client.search_batch(
-    #             collection_name=self.collection_name,
-    #             requests=chunk,
-    #         )
-    #         results.extend(res)
-
-    #     # 6. Construire les prompts avec les docs retrouvés
-    #     prompts = []
-    #     for row, activity, docs in zip(rows, activities, results):
-    #         # docs = List[ScoredPoint] renvoyés par Qdrant
-    #         proposed_codes, list_codes = self._format_documents([
-    #             Document(
-    #                 page_content=d.payload["page_content"],
-    #                 metadata=d.payload.get("metadata", {}),
-    #             )
-    #             for d in docs
-    #         ])
-    #         prompt = self.prompt_template.compile(
-    #             activity=activity,
-    #             proposed_codes=proposed_codes,
-    #             list_proposed_codes=list_codes,
-    #         )
-    #         prompts.append(prompt)
-
-    #     # 7. Sauvegarder et retourner
-    #     save_prompts(prompts, self.prompt_name, self.prompt_label)
-    #     return prompts
-
     @property
     def output_path(self) -> str:
         """
@@ -300,21 +227,6 @@ class RAGStrategy(EncodeStrategy):
         """
         date = datetime.now().strftime("%Y-%m-%d--%H:%M")
         return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{self.generation_model}/part-{{i}}-{{third}}--{date}.parquet"
-
-    async def _retry_with_backoff(self, coro, *args, retries=5, backoff_in_seconds=1, **kwargs):
-        if not callable(coro):
-            raise TypeError(f"Expected a callable coroutine, got {type(coro)}")
-        if not inspect.iscoroutinefunction(coro):
-            raise TypeError(f"Expected an async coroutine function, got {coro}")
-
-        for attempt in range(retries):
-            try:
-                return await coro(*args, **kwargs)
-            except Exception as e:
-                wait_time = backoff_in_seconds * (2 ** attempt)
-                print(f"Attempt {attempt+1} failed: {e}. Retrying in {wait_time}s...")
-                await asyncio.sleep(wait_time)
-        raise RuntimeError(f"Failed after {retries} retries")
 
     def _format_documents(self, docs: List[Document]) -> Tuple[str, str]:
         """
