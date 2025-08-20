@@ -184,3 +184,20 @@ def get_model_agreement_stats(df: pd.DataFrame, model_columns: list) -> dict:
             stats[f"agreement_{model1}_vs_{model2}"] = agreement
 
     return stats
+
+def chunked(iterable, size):
+    """
+    Yield successive chunks from an iterable of a specified size.
+
+    Args:
+        iterable: An iterable to be divided into chunks.
+        size: The size of each chunk.
+
+    Yields:
+        A chunk of the specified size from the iterable.
+    
+    Notes:
+    Used for Qdrant requests batching
+    """
+    for i in range(0, len(iterable), size):
+        yield iterable[i:i+size]

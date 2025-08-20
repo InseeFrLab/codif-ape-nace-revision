@@ -12,6 +12,7 @@ from tqdm.asyncio import tqdm
 from vllm.sampling_params import GuidedDecodingParams, SamplingParams
 from qdrant_client.http.models import SearchRequest
 from qdrant_client.http.models import NamedVector
+from math import ceil
     
 
 from constants.llm import (
@@ -21,6 +22,7 @@ from constants.llm import (
 from constants.paths import URL_SIRENE4_AMBIGUOUS_RAG
 from constants.vector_db import MAX_CONCURRENCY
 from utils.data import load_prompts, save_prompts
+from utils.strategies import chunked
 from vector_db.loading import get_retriever
 
 from .base import EncodeStrategy
@@ -72,6 +74,7 @@ class RAGStrategy(EncodeStrategy):
         super().__init__(generation_model)
         self.response_format = RAGResponse
         self.reranker_model = reranker_model
+        self.collection_name = collection_name
         self.db = get_retriever(collection_name, self.reranker_model)
         self.prompt_name = prompt_name
         self.prompt_label = prompt_label
@@ -86,17 +89,9 @@ class RAGStrategy(EncodeStrategy):
         )
         self.semaphore = asyncio.Semaphore(MAX_CONCURRENCY)  # Max concurrency for API calls
 
-    # async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
-    #     if load_prompts_from_file:
-    #         prompts = load_prompts(self.prompt_name, self.prompt_label)
-    #     else:
-    #         tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
-    #         prompts = await tqdm.gather(*tasks)
-    #         save_prompts(prompts, self.prompt_name, self.prompt_label)
-    #     return prompts
 
     async def get_prompts(
-        self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5
+        self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5, batch_size: int = 128,
     ) -> List[List[Dict]]:
 
         if load_prompts_from_file:
@@ -119,20 +114,23 @@ class RAGStrategy(EncodeStrategy):
         # 4. Construire une requête batch pour Qdrant
         search_requests = [
             SearchRequest(
-                vector=NamedVector(name="Qwen/Qwen3-Embedding-8B", vector=vec),
+                vector=NamedVector(name=self.db.vector_name, vector=vec),
                 limit=top_k,
                 with_payload=True
             )
             for vec in embeddings
         ]
-        
 
-        # 5. Requête batch au client Qdrant (un seul appel réseau !)
-        client = self.db.client
-        results = client.search_batch(
-            collection_name=strategy.db.collection_name,
-            requests=search_requests,
-        )
+        num_chunks = (len(search_requests) + batch_size - 1) // batch_size  # Calcul du nombre de chunks
+
+        # 5. Requête batch au client Qdrant (un seul appel réseau par batch!)
+        results = []
+        for chunk in tqdm(chunked(search_requests, batch_size), total=num_chunks*batch_size, desc="Processing Qdrant requests"):
+            res = self.db.client.search_batch(
+                collection_name=self.collection_name,
+                requests=chunk,
+            )
+            results.extend(res)
 
         # 6. Construire les prompts avec les docs retrouvés
         prompts = []
