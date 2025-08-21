@@ -126,7 +126,7 @@ if __name__ == "__main__":
     parser.add_argument("--strategy", choices=["rag", "cag"], required=True)
     parser.add_argument("--experiment_name", type=str, default="Test")
     parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument("--collection_name", type=str, default="embeddings_qwen")
+    parser.add_argument("--collection_name", type=str)
     parser.add_argument("--llm_name", type=str, default="Qwen/Qwen3-0.6B")
     parser.add_argument("--third", type=int, default=None)
     parser.add_argument("--prompts_from_file", action="store_true")

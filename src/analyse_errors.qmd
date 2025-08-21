@@ -43,9 +43,9 @@ config.setup()
 
 ```{python}
 #| label: import-data
-mapping = fetch_mapping()
-data = get_ambiguous_data(mapping, None, only_annotated=True)
-print(len(data))
+# mapping = fetch_mapping()
+# data = get_ambiguous_data(mapping, None, only_annotated=True)
+# print(len(data))
 ```
 
 ```{python}
@@ -60,7 +60,7 @@ query = """
     SELECT
         * EXCLUDE(codable),
         CAST(codable AS BOOLEAN) AS codable
-    FROM read_parquet('s3://projet-ape/NAF-revision/relabeled-data-rag/Qwen/Qwen2-7B-Instruct/codable=true/part-0---2025-08-21--08:46.parquet')
+    FROM read_parquet('s3://projet-ape/NAF-revision/relabeled-data-rag/Qwen/Qwen2-7B-Instruct/part-0---2025-08-21--16:16.parquet')
 """
 results = load_data_from_s3(query)
 print(len(results))
@@ -72,7 +72,7 @@ results.head()
 ```
 
 ```{python}
-data.head()
+# data.head()
 ```
 
 ```{python}

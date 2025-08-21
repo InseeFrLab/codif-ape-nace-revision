@@ -55,10 +55,10 @@ class RAGResponse(BaseModel):
 class RAGStrategy(EncodeStrategy):
     def __init__(
         self,
+        collection_name: str,
         generation_model: str = "Qwen/Qwen2.5-0.5B",
         prompt_name: str = "rag-classifier",
         prompt_label: str = "production",
-        collection_name: str = os.getenv("COLLECTION_NAME"),
         reranker_model: str = None,
     ):
         super().__init__(generation_model)
@@ -117,7 +117,7 @@ class RAGStrategy(EncodeStrategy):
         prompts = self._build_prompts(activities, results)
 
         # Persist prompts for later reuse
-        save_prompts(prompts, self.prompt_name, self.prompt_label)
+        save_prompts(prompts, self.prompt_name, self.prompt_label, self.collection_name)
         return prompts
 
     def _prepare_queries(self, data: pd.DataFrame):
