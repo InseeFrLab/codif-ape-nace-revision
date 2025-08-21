@@ -292,7 +292,7 @@ def df_to_prompts(df: pd.DataFrame) -> List[List[Dict]]:
     return prompt_list
 
 
-def save_prompts(prompts: List[List[Dict]], prompt_name: str = "", prompt_label: str = "") -> None:
+def save_prompts(prompts: List[List[Dict]], prompt_name: str = "", prompt_label: str = "", collection: str = os.getenv("COLLECTION_NAME")) -> None:
     """Save prompts to a Parquet file.
 
     Args:
@@ -304,13 +304,13 @@ def save_prompts(prompts: List[List[Dict]], prompt_name: str = "", prompt_label:
     prompts_df: pd.DataFrame = prompts_to_df(prompts)
     prompts_df.to_parquet(
         URL_PROMPTS_RAG.format(
-            collection=os.getenv("COLLECTION_NAME"), prompt_name=prompt_name, prompt_label=prompt_label
+            collection=collection, prompt_name=prompt_name, prompt_label=prompt_label
         ),
         filesystem=fs,
     )
 
 
-def load_prompts(prompt_name: str = "", prompt_label: str = "") -> List[List[Dict]]:
+def load_prompts(prompt_name: str = "", prompt_label: str = "", collection: str = os.getenv("COLLECTION_NAME")) -> List[List[Dict]]:
     """Load prompts from a Parquet file.
 
     Args:
