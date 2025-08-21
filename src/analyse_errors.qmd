@@ -6,43 +6,6 @@ format:
 ---
 
 ```{python}
-import asyncio
-import logging
-import os
-import time
-import tempfile
-import mlflow
-import config
-from constants.paths import URL_SIRENE4_EXTRACTION
-from evaluation.evaluator import Evaluator
-from strategies.base import EncodeStrategy
-from strategies.cag import CAGStrategy
-from strategies.rag import RAGStrategy
-from utils.data import get_ambiguous_data, fetch_mapping
-
-config.setup()
-
-```
-
-```{python}
-import logging
-import os
-from typing import Any, Dict, List, Optional
-
-import duckdb
-import pandas as pd
-import s3fs
-
-from constants.data import VAR_TO_KEEP
-from constants.paths import (
-    URL_EXPLANATORY_NOTES,
-    URL_GROUND_TRUTH,
-    URL_MAPPING_TABLE,
-    URL_PROMPTS_RAG
-)
-```
-
-```{python}
 #| label: imports
 import asyncio
 import logging
@@ -51,59 +14,128 @@ import time
 import tempfile
 import mlflow
 import config
-from constants.paths import URL_SIRENE4_EXTRACTION
+import duckdb
+import pandas as pd
+import s3fs
+from typing import Any, Dict, List, Optional
+
+# Imports depuis les constants
+from constants.paths import (
+    URL_SIRENE4_EXTRACTION,
+    URL_EXPLANATORY_NOTES,
+    URL_GROUND_TRUTH,
+    URL_MAPPING_TABLE,
+    URL_PROMPTS_RAG
+)
+from constants.data import VAR_TO_KEEP
+
+# Imports depuis les modules locaux
 from evaluation.evaluator import Evaluator
 from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
 from strategies.rag import RAGStrategy
-from utils.data import get_ambiguous_data, fetch_mapping, load_prompts, load_data_from_s3
+from utils.data import get_ambiguous_data, fetch_mapping, load_prompts, load_data_from_s3, df_to_prompts
+from mappings.mappings import get_mapping
 
+# Configuration
 config.setup()
 ```
 
 ```{python}
-#| label: data-imports
-import duckdb
-import pandas as pd
-import s3fs
-
-from constants.data import VAR_TO_KEEP
-from constants.paths import (
-    URL_EXPLANATORY_NOTES,
-    URL_GROUND_TRUTH,
-    URL_MAPPING_TABLE,
-    URL_PROMPTS_RAG,
-)
-```
-
-```{python}
-#| label: mappings-import
-from mappings.mappings import get_mapping
-```
-
-```{python}
-#| label: main-logic
+#| label: import-data
 mapping = fetch_mapping()
 data = get_ambiguous_data(mapping, None, only_annotated=True)
+print(len(data))
 ```
 
 ```{python}
-prompts = load_prompts(prompt_name="rag-classifier", prompt_label="production")
+#| label: import-prompts
+prompts = load_prompts(prompt_name="rag-classifier", prompt_label="production", collection="embeddings_qwen_semi_light")
 print(len(prompts))
 ```
 
 ```{python}
+#| label: import-results
 query = """
-    SELECT *
-    FROM read_parquet('s3://projet-ape/NAF-revision/relabeled-data-rag/Qwen/Qwen2-7B-Instruct/part-0---2025-08-21--07:53.parquet')
-    LIMIT 10
+    SELECT
+        * EXCLUDE(codable),
+        CAST(codable AS BOOLEAN) AS codable
+    FROM read_parquet('s3://projet-ape/NAF-revision/relabeled-data-rag/Qwen/Qwen2-7B-Instruct/codable=true/part-0---2025-08-21--08:46.parquet')
 """
 results = load_data_from_s3(query)
-print(results.head())
+print(len(results))
+```
+
+
+```{python}
+results.head()
 ```
 
 ```{python}
-#| label: final-check
-print("All good")
+data.head()
 ```
 
+```{python}
+print(prompts[0][1]["content"])
+```
+
+
+```{python}
+metrics, df_eval = Evaluator().evaluate(results, prompts)
+```
+
+```{python}
+metrics
+```
+## Cases with bad mapping
+
+```{python}
+results.head(10)
+# data.head(1)
+# print(prompts[0][1]["content"])
+```
+
+```{python}
+df_eval["mapping_ok"].head(15)
+```
+```{python}
+df_eval["mapping_ok"].value_counts()
+```
+
+```{python}
+df_eval[df_eval["mapping_ok"] == True]
+```
+
+
+Frequence of codes in all goldstandard
+
+```{python}
+#| label: plot-apet-manual
+import matplotlib.pyplot as plt
+
+counts = df_eval['apet_manual'].str[:2].value_counts().sort_index()
+
+plt.figure(figsize=(10, 6))
+counts.plot(kind='bar')
+plt.title('Nombre de cas par valeur de apet_manual (2 premiers caractères)')
+plt.xlabel('Valeur de apet_manual (2 premiers caractères)')
+plt.ylabel('Nombre de cas')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+```
+
+Frequence of codes in examples with bad mapping
+
+```{python}
+counts = df_eval[df_eval["mapping_ok"] == False]['apet_manual'].str[:2].value_counts().sort_index()
+
+plt.figure(figsize=(10, 6))
+counts.plot(kind='bar')
+plt.title('Nombre de cas par valeur de apet_manual (2 premiers caractères)')
+plt.xlabel('Valeur de apet_manual (2 premiers caractères)')
+plt.ylabel('Nombre de cas')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+```
