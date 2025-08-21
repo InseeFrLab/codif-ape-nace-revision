@@ -1,0 +1,109 @@
+---
+title: "Errors analyses notebook"
+format:
+  html:
+    code-fold: true
+---
+
+```{python}
+import asyncio
+import logging
+import os
+import time
+import tempfile
+import mlflow
+import config
+from constants.paths import URL_SIRENE4_EXTRACTION
+from evaluation.evaluator import Evaluator
+from strategies.base import EncodeStrategy
+from strategies.cag import CAGStrategy
+from strategies.rag import RAGStrategy
+from utils.data import get_ambiguous_data, fetch_mapping
+
+config.setup()
+
+```
+
+```{python}
+import logging
+import os
+from typing import Any, Dict, List, Optional
+
+import duckdb
+import pandas as pd
+import s3fs
+
+from constants.data import VAR_TO_KEEP
+from constants.paths import (
+    URL_EXPLANATORY_NOTES,
+    URL_GROUND_TRUTH,
+    URL_MAPPING_TABLE,
+    URL_PROMPTS_RAG
+)
+```
+
+```{python}
+#| label: imports
+import asyncio
+import logging
+import os
+import time
+import tempfile
+import mlflow
+import config
+from constants.paths import URL_SIRENE4_EXTRACTION
+from evaluation.evaluator import Evaluator
+from strategies.base import EncodeStrategy
+from strategies.cag import CAGStrategy
+from strategies.rag import RAGStrategy
+from utils.data import get_ambiguous_data, fetch_mapping, load_prompts, load_data_from_s3
+
+config.setup()
+```
+
+```{python}
+#| label: data-imports
+import duckdb
+import pandas as pd
+import s3fs
+
+from constants.data import VAR_TO_KEEP
+from constants.paths import (
+    URL_EXPLANATORY_NOTES,
+    URL_GROUND_TRUTH,
+    URL_MAPPING_TABLE,
+    URL_PROMPTS_RAG,
+)
+```
+
+```{python}
+#| label: mappings-import
+from mappings.mappings import get_mapping
+```
+
+```{python}
+#| label: main-logic
+mapping = fetch_mapping()
+data = get_ambiguous_data(mapping, None, only_annotated=True)
+```
+
+```{python}
+prompts = load_prompts(prompt_name="rag-classifier", prompt_label="production")
+print(len(prompts))
+```
+
+```{python}
+query = """
+    SELECT *
+    FROM read_parquet('s3://projet-ape/NAF-revision/relabeled-data-rag/Qwen/Qwen2-7B-Instruct/part-0---2025-08-21--07:53.parquet')
+    LIMIT 10
+"""
+results = load_data_from_s3(query)
+print(results.head())
+```
+
+```{python}
+#| label: final-check
+print("All good")
+```
+

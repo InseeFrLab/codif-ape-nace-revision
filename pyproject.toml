@@ -20,6 +20,7 @@ dependencies = [
     "vllm>=0.9.0",
     "flashinfer-python>=0.2.3",
     "huggingface-hub[cli]>=0.33.1",
+    "jupyter>=1.1.1",
 ]
 authors = [
   {name="Thomas Faria", email="thomas.faria@insee.fr"}
