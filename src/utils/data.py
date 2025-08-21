@@ -321,11 +321,13 @@ def load_prompts(prompt_name: str = "", prompt_label: str = "", collection: str 
         List of conversations loaded from the file
     """
     fs = get_file_system()
+    url = URL_PROMPTS_RAG.format(
+            collection=collection, prompt_name=prompt_name, prompt_label=prompt_label
+    )
     prompts_df = pd.read_parquet(
-        URL_PROMPTS_RAG.format(
-            collection=os.getenv("COLLECTION_NAME"), prompt_name=prompt_name, prompt_label=prompt_label
-        ),
+        url,
         filesystem=fs,
     )
     prompts = df_to_prompts(prompts_df)
+    print(f"Loaded data from {url}")
     return prompts
