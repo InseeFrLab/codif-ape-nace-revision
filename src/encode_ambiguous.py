@@ -14,7 +14,6 @@ from utils.data import get_ambiguous_data
 
 config.setup()
 
-
 async def run_encode(
     strategy_cls: EncodeStrategy,
     experiment_name: str,
@@ -25,6 +24,7 @@ async def run_encode(
     prompts_from_file: bool,
     prompt_name: str,
     prompt_label: str,
+    top_k: int,
     sample_size: int = None,
 ):
     """Main workflow to run encoding strategy, generate prompts, call LLM, evaluate, and log with MLflow."""
@@ -35,11 +35,11 @@ async def run_encode(
     with mlflow.start_run(run_name=run_name):
         strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
         data = _load_data(strategy, third, sample_size)
-        prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, prompts_from_file)
+        prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file)
         generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts)
         results = _process_and_merge(strategy, data, generation_outputs)
         metrics, df_eval = _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn, strategy)
-        _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval)
+        _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k)
 
 
 def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
@@ -60,10 +60,11 @@ def _load_data(strategy, third, sample_size=None):
     return data
 
 
-async def _retrieve_prompts(strategy, data, load_from_file=False):
+
+async def _retrieve_prompts(strategy, data, top_k, load_from_file=False):
     logging.info("Retrieving prompts ==========================")
     start_time = time.time()
-    prompts = await strategy.get_prompts(data, load_prompts_from_file=load_from_file)
+    prompts = await strategy.get_prompts(data, load_prompts_from_file=load_from_file, top_k=top_k)
     retrieval_time_mn = (time.time() - start_time) / 60
     logging.info("Prompts retrieved")
     return prompts, retrieval_time_mn
@@ -96,7 +97,7 @@ def _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn
     return metrics, df_eval
 
 
-def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval):
+def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k):
     output_path = strategy.save_results(results, third=None)
     mlflow.log_params(
         {
@@ -107,6 +108,7 @@ def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval):
             "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
             "COLLECTION_NAME": collection_name,
             "EMBEDDING_MODEL": strategy.db.vector_name,
+            "top_k": top_k,
         }
     )
 
@@ -117,7 +119,6 @@ def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval):
         file_path = os.path.join(tmpdir, "df_eval.csv")
         df_eval.to_csv(file_path, index=False)
         mlflow.log_artifact(file_path, artifact_path="dataframes")
-
 
 if __name__ == "__main__":
     import argparse
@@ -132,6 +133,7 @@ if __name__ == "__main__":
     parser.add_argument("--prompts_from_file", action="store_true")
     parser.add_argument("--prompt_name", type=str, default="rag-classifier")
     parser.add_argument("--prompt_label", type=str, default="production")
+    parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--sample_size", type=int, default=None)
 
     args = parser.parse_args()
@@ -161,5 +163,6 @@ if __name__ == "__main__":
             prompt_name=args.prompt_name,
             prompt_label=args.prompt_label,
             sample_size=args.sample_size,
+            top_k=args.top_k,
         )
     )
