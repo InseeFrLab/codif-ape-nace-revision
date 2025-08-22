@@ -52,11 +52,13 @@ class CAGStrategy(EncodeStrategy):
     def __init__(
         self,
         generation_model: str = "Qwen/Qwen2.5-0.5B",
+        prompt_name: str = "cag-classifier",
+        prompt_label: str = "production",
         reranker_model: str = None,
     ):
         super().__init__(generation_model)
         self.response_format = CAGResponse
-        self.prompt_template = Langfuse().get_prompt("cag-classifier", label="production")
+        self.prompt_template = Langfuse().get_prompt(prompt_name, label=prompt_label)
         self.sampling_params = SamplingParams(
             max_tokens=MAX_NEW_TOKEN,
             temperature=TEMPERATURE,
@@ -65,8 +67,8 @@ class CAGStrategy(EncodeStrategy):
             guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
         )
 
-    async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
-        tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
+    async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5) -> List[List[Dict]]:
+        tasks = [self.create_prompt(row, top_k=top_k) for row in data.to_dict(orient="records")]
         return await tqdm.gather(*tasks)
 
     @property

@@ -5,6 +5,7 @@ import time
 import tempfile
 import mlflow
 import config
+import inspect
 from constants.paths import URL_SIRENE4_EXTRACTION
 from evaluation.evaluator import Evaluator
 from strategies.base import EncodeStrategy
@@ -44,12 +45,17 @@ async def run_encode(
 
 def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
     logging.info("Initializing strategy ==========================")
-    return strategy_cls(
-        generation_model=llm_name,
-        prompt_name=prompt_name,
-        prompt_label=prompt_label,
-        collection_name=collection_name,
-    )
+    
+    kwargs = {
+        "generation_model": llm_name,
+        "prompt_name": prompt_name,
+        "prompt_label": prompt_label,
+    }
+
+    if strategy_cls in [RAGStrategy]:
+        kwargs["collection_name"] = collection_name
+
+    return strategy_cls(**kwargs)
 
 
 def _load_data(strategy, third, sample_size=None):
@@ -99,19 +105,21 @@ def _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn
 
 def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k):
     output_path = strategy.save_results(results, third=None)
-    mlflow.log_params(
-        {
-            "LLM_MODEL": llm_name,
-            "TEMPERATURE": strategy.sampling_params.temperature,
-            "input_path": URL_SIRENE4_EXTRACTION,
-            "output_path": output_path,
-            "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
-            "COLLECTION_NAME": collection_name,
-            "EMBEDDING_MODEL": strategy.db.vector_name,
-            "top_k": top_k,
-        }
-    )
+    params = {
+        "LLM_MODEL": llm_name,
+        "TEMPERATURE": strategy.sampling_params.temperature,
+        "input_path": URL_SIRENE4_EXTRACTION,
+        "output_path": output_path,
+        "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
+        "top_k": top_k,
+    }
 
+    # If RAG
+    if hasattr(strategy, "db"):
+        params["COLLECTION_NAME"] = collection_name
+        params["EMBEDDING_MODEL"] = getattr(strategy.db, "vector_name", None)
+
+    mlflow.log_params(params)
     for metric, value in metrics.items():
         mlflow.log_metric(metric, value)
 
