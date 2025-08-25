@@ -91,6 +91,7 @@ class EncodeStrategy(ABC):
     def _format_activity_description(self, row: Any) -> str:
         """
         Format the activity description from the row data.
+        Adds precisions in case of agricultural activity
         """
         activity = row.get("libelle").lower() if row.get("libelle").isupper() else row.get("libelle")
 

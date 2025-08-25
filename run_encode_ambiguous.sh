@@ -50,11 +50,10 @@ for model in "${models[@]}"; do
 
       uv run src/encode_ambiguous.py \
           --strategy rag \
-          --experiment_name Test \
+          --experiment_name NACE2025_DATASET \
           --collection_name "$collection" \
           --llm_name "$model" \
-          --top_k "$top_k" \
-          --sample_size 200
+          --top_k "$top_k"
 
       run_id=$((run_id+1))
     done
