@@ -98,8 +98,11 @@ class EncodeStrategy(ABC):
         if row.get("activ_sec_agri_et"):
             activity += f"\nPrécisions sur l'activité agricole : {row.get('activ_sec_agri_et').lower()}"
 
-        if row.get("activ_nat_lib_et"):
-            activity += f"\nAutre nature d'activité : {row.get('activ_nat_lib_et').lower()}"
+        if row.get("activ_nat_lib_et_1"):
+            activity += f"\nAutre nature d'activité : {row.get('activ_nat_lib_et_1').lower()}"
+
+        if row.get("lib_cj"):
+            activity += f"\nCatégorie juridique de l'établissement : {row.get('lib_cj').lower()}"
 
         return activity
 
