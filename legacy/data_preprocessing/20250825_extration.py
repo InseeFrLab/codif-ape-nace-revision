@@ -1,7 +1,10 @@
-import duckdb
 import json
+
+import duckdb
 import pandas as pd
+
 from utils.data import get_file_system
+
 fs = get_file_system()
 
 conn = duckdb.connect()

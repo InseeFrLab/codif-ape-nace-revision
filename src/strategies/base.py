@@ -81,7 +81,7 @@ class EncodeStrategy(ABC):
         pq.write_to_dataset(
             pa.Table.from_pandas(df),
             root_path="/".join(output_path.split("/")[:-1]),
-            #partition_cols=["codable"],
+            # partition_cols=["codable"],
             basename_template=output_path.split("/")[-1],
             existing_data_behavior="overwrite_or_ignore",
             filesystem=self.fs,

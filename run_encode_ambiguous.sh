@@ -59,5 +59,3 @@ for model in "${models[@]}"; do
     done
   done
 done
-
-

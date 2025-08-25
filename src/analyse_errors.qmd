@@ -129,7 +129,7 @@ plt.show()
 
 level = 3
 ratio_threshold = 1.3
-minimum_false_count = 50 
+minimum_false_count = 50
 
 df_eval_cp = df_eval.copy()
 df_eval_cp["apet_manual_short"] = df_eval_cp['apet_manual'].str[:level]

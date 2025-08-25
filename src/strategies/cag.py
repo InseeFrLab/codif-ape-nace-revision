@@ -67,7 +67,9 @@ class CAGStrategy(EncodeStrategy):
             guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
         )
 
-    async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5) -> List[List[Dict]]:
+    async def get_prompts(
+        self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5
+    ) -> List[List[Dict]]:
         tasks = [self.create_prompt(row, top_k=top_k) for row in data.to_dict(orient="records")]
         return await tqdm.gather(*tasks)
 

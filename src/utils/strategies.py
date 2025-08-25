@@ -106,9 +106,7 @@ def select_labels_weighted_voting(
 
     def weighted_vote(row):
         # Get non-None predictions with their weights
-        valid_predictions = {
-            pred: weights[col] for col, pred in row[model_columns].items() if pd.notna(pred)
-        }
+        valid_predictions = {pred: weights[col] for col, pred in row[model_columns].items() if pd.notna(pred)}
 
         if not valid_predictions:
             return default_value
@@ -120,9 +118,7 @@ def select_labels_weighted_voting(
 
         # Get prediction(s) with maximum weighted votes
         max_weight = max(prediction_weights.values())
-        top_predictions = [
-            pred for pred, weight in prediction_weights.items() if weight == max_weight
-        ]
+        top_predictions = [pred for pred, weight in prediction_weights.items() if weight == max_weight]
 
         return top_predictions[0] if len(top_predictions) == 1 else row[model_columns[0]]
 
@@ -147,10 +143,8 @@ def get_model_agreement_stats(df: pd.DataFrame, model_columns: list) -> dict:
         return {
             "valid_predictions": len(predictions),
             "unique_predictions": len(unique_predictions),
-            "full_agreement": len(unique_predictions) == 1
-            and len(predictions) == len(model_columns),
-            "partial_agreement": len(unique_predictions) == 1
-            and len(predictions) < len(model_columns),
+            "full_agreement": len(unique_predictions) == 1 and len(predictions) == len(model_columns),
+            "partial_agreement": len(unique_predictions) == 1 and len(predictions) < len(model_columns),
             "all_different": len(unique_predictions) == len(predictions) and len(predictions) > 1,
             "all_none": len(predictions) == 0,
         }
