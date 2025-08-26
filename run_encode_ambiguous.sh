@@ -5,22 +5,22 @@
 # -------------------------------
 # List of models to test
 models=(
-  "Qwen/Qwen3-0.6B"
+  #"Qwen/Qwen3-0.6B"
   "Qwen/Qwen2-7B-Instruct"
 )
 
 # List of collections
 collections=(
-  "embeddings_qwen_light"
+  #"embeddings_qwen_light"
   "embeddings_qwen_semi_light"
-  "embeddings_qwen"
+  #"embeddings_qwen"
 )
 
 # List of top_k values
 top_ks=(
   4
-  7
-  10
+#  7
+#  10
 )
 
 # -------------------------------
@@ -46,6 +46,7 @@ for model in "${models[@]}"; do
       echo "    Model      : $model"
       echo "    Collection : $collection"
       echo "    top_k      : $top_k"
+      echo "    reranker_model      : BAAI/bge-reranker-large"
       echo "----------------------------------------------"
 
       uv run src/encode_ambiguous.py \
@@ -53,7 +54,8 @@ for model in "${models[@]}"; do
           --experiment_name NACE2025_DATASET \
           --collection_name "$collection" \
           --llm_name "$model" \
-          --top_k "$top_k"
+          --top_k "$top_k" \
+          --reranker_model BAAI/bge-reranker-large
 
       run_id=$((run_id+1))
     done

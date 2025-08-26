@@ -28,6 +28,7 @@ async def run_encode(
     prompt_name: str,
     prompt_label: str,
     top_k: int,
+    reranker_model: str = None,
     sample_size: int = None,
 ):
     """Main workflow to run encoding strategy, generate prompts, call LLM, evaluate, and log with MLflow."""
@@ -36,7 +37,9 @@ async def run_encode(
     mlflow.set_experiment(experiment_name)
 
     with mlflow.start_run(run_name=run_name):
-        strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
+        strategy = _initialize_strategy(
+            strategy_cls, llm_name, prompt_name, prompt_label, collection_name, reranker_model
+        )
         data = _load_data(strategy, third, sample_size)
         prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file)
         generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts)
@@ -45,7 +48,7 @@ async def run_encode(
         _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k)
 
 
-def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
+def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name, reranker_model):
     logging.info("Initializing strategy ==========================")
 
     kwargs = {
@@ -56,6 +59,7 @@ def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, coll
 
     if strategy_cls in [RAGStrategy]:
         kwargs["collection_name"] = collection_name
+        kwargs["reranker_model"] = reranker_model
 
     return strategy_cls(**kwargs)
 
@@ -146,6 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("--prompt_label", type=str, default="production")
     parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--sample_size", type=int, default=None)
+    parser.add_argument("--reranker_model", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -175,5 +180,6 @@ if __name__ == "__main__":
             prompt_label=args.prompt_label,
             sample_size=args.sample_size,
             top_k=args.top_k,
+            reranker_model=args.reranker_model,
         )
     )
