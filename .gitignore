@@ -134,3 +134,6 @@ dmypy.json
 *_files/
 *.html
 test.py
+
+# nohup
+*.out

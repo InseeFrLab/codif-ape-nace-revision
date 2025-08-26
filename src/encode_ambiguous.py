@@ -113,6 +113,7 @@ def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, 
         "output_path": output_path,
         "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
         "top_k": top_k,
+        "URL_SIRENE4_EXTRACTION": URL_SIRENE4_EXTRACTION,
     }
 
     # If RAG
