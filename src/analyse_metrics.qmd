@@ -1,0 +1,134 @@
+---
+title: "Matrics analyses notebook"
+format:
+  html:
+    code-fold: true
+---
+
+
+```{python}
+import mlflow
+import config
+config.setup()
+
+experiment_name = "NACE2025_DATASET"
+number_of_runs = 18
+
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+mlflow.set_experiment(experiment_name)
+
+
+# Get the experiment ID
+experiment = mlflow.get_experiment_by_name(experiment_name)
+if experiment is None:
+    raise ValueError(f"Experiment '{experiment_name}' not found")
+
+experiment_id = experiment.experiment_id
+
+# Fetch the last runs
+runs = mlflow.search_runs(
+    experiment_ids=[experiment_id],
+    max_results=number_of_runs,
+    order_by=["start_time DESC"]
+)
+```
+
+```{python}
+import pandas as pd
+pd.set_option('display.max_columns', None)
+runs
+```
+
+
+```{python}
+import plotly.express as px
+
+# Préparer les données pour la visualisation
+df = runs[['params.top_k', 'params.LLM_MODEL', 'params.COLLECTION_NAME', 'metrics.accuracy_overall_lvl_5']].copy()
+df['metrics.accuracy_overall_lvl_5'] = df['metrics.accuracy_overall_lvl_5'].astype(float)
+
+# Créer un graphique pour chaque valeur unique de top_k
+for top_k in df['params.top_k'].unique():
+    subset = df[df['params.top_k'] == top_k]
+
+    # Créer le graphique à barres groupées avec Plotly
+    fig = px.bar(
+        subset,
+        x='params.LLM_MODEL',
+        y='metrics.accuracy_overall_lvl_5',
+        color='params.COLLECTION_NAME',
+        barmode='group',
+        title=f'Accuracy by LLM Model and Collection Name (top_k={top_k})',
+        labels={'params.LLM_MODEL': 'LLM Model', 'metrics.accuracy_overall_lvl_5': 'Accuracy (Level 5)', 'params.COLLECTION_NAME': 'Collection Name'}
+    )
+
+    # Ajouter les valeurs sur les barres
+    fig.update_traces(
+        texttemplate='%{y:.2f}',
+        textposition='inside',
+    )
+
+    # Personnaliser la mise en page
+    fig.update_layout(
+        xaxis_title='LLM Model',
+        yaxis_title='Accuracy (Level 5)',
+        legend_title='Collection Name',
+        xaxis_tickangle=-45,
+        uniformtext_minsize=8,
+        uniformtext_mode='hide',
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+    )
+
+    # Afficher le graphique
+    fig.show()
+
+```
+
+```{python}
+runs.columns
+```
+```{python}
+import plotly.express as px
+
+# Préparer les données pour la visualisation
+df = runs[['params.top_k', 'params.LLM_MODEL', 'params.COLLECTION_NAME', 'metrics.generation_time_mn']].copy()
+df['metrics.generation_time_mn'] = df['metrics.generation_time_mn'].astype(float)
+
+# Créer un graphique pour chaque valeur unique de top_k
+for top_k in df['params.top_k'].unique():
+    subset = df[df['params.top_k'] == top_k]
+
+    # Créer le graphique à barres groupées avec Plotly
+    fig = px.bar(
+        subset,
+        x='params.LLM_MODEL',
+        y='metrics.generation_time_mn',
+        color='params.COLLECTION_NAME',
+        barmode='group',
+        title=f'Accuracy by LLM Model and Collection Name (top_k={top_k})',
+        labels={'params.LLM_MODEL': 'LLM Model', 'metrics.generation_time_mn': 'Accuracy (Level 5)', 'params.COLLECTION_NAME': 'Collection Name'}
+    )
+
+    # Ajouter les valeurs sur les barres
+    fig.update_traces(
+        texttemplate='%{y:.2f}',
+        textposition='inside',
+    )
+
+    # Personnaliser la mise en page
+    fig.update_layout(
+        xaxis_title='LLM Model',
+        yaxis_title='metrics.generation_time_mn',
+        legend_title='Collection Name',
+        xaxis_tickangle=-45,
+        uniformtext_minsize=8,
+        uniformtext_mode='hide',
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+    )
+
+    # Afficher le graphique
+    fig.show()
+
+```
