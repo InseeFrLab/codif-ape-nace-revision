@@ -47,7 +47,6 @@ class Evaluator:
         metrics = accuracies | {"eval_size": eval_df.shape[0], "mapping_ok": eval_df["mapping_ok"].sum()}
         return metrics, eval_df
 
-
     def get_prompt_mapping(self, prompts: List, ground_truth: pd.DataFrame) -> pd.DataFrame:
         """
         Processes prompts and returns a DataFrame with liasse_numero, mapping_ok, and position.
@@ -58,7 +57,7 @@ class Evaluator:
         mapping = []
         ground_truth_c = ground_truth.copy().reset_index(drop=True)
         for idx, row in enumerate(ground_truth_c.to_dict(orient="records")):
-            text = prompts[idx][1]["content"] # 1 to get "user prompt" dict, not "system prompt" dict
+            text = prompts[idx][1]["content"]  # 1 to get "user prompt" dict, not "system prompt" dict
 
             # Retrieve the proposed code from the prompt
             proposed_codes = [c.replace(".", "") for c in re.findall(pattern, text)]

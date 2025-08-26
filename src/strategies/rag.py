@@ -1,18 +1,16 @@
 import asyncio
 import logging
-import os
 from datetime import datetime
+from math import ceil
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 from langchain.schema import Document
 from langfuse import Langfuse
 from pydantic import BaseModel, Field, model_validator
+from qdrant_client.http.models import NamedVector, SearchRequest
 from tqdm.asyncio import tqdm
 from vllm.sampling_params import GuidedDecodingParams, SamplingParams
-from qdrant_client.http.models import SearchRequest
-from qdrant_client.http.models import NamedVector
-from math import ceil
 
 from constants.llm import (
     MAX_NEW_TOKEN,

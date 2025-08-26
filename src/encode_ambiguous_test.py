@@ -3,8 +3,8 @@
 import asyncio
 import logging
 import os
-import time
 import tempfile
+import time
 
 import mlflow
 
@@ -17,6 +17,7 @@ from strategies.rag import RAGStrategy
 from utils.data import get_ambiguous_data
 
 config.setup()
+
 
 async def run_encode(
     strategy_cls: EncodeStrategy,
@@ -93,16 +94,17 @@ async def run_encode(
                 "EMBEDDING_MODEL": strategy.db.vector_name,
             }
         )
-        
+
         for metric, value in metrics.items():
             mlflow.log_metric(metric, value)
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             file_path = os.path.join(tmpdir, "df_eval.csv")
             df_eval.to_csv(file_path, index=False)
             mlflow.log_artifact(file_path, artifact_path="dataframes")
 
     print(f"collection_name: {collection_name} ======================")
+
 
 if __name__ == "__main__":
     import argparse
@@ -138,7 +140,7 @@ if __name__ == "__main__":
     # args = parser.parse_args(args_list)
 
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
-    #assert "COLLECTION_NAME" in os.environ, "Set COLLECTION_NAME"
+    # assert "COLLECTION_NAME" in os.environ, "Set COLLECTION_NAME"
 
     STRATEGY_MAP = {
         "rag": RAGStrategy,

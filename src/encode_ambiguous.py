@@ -1,11 +1,12 @@
 import asyncio
 import logging
 import os
-import time
 import tempfile
+import time
+
 import mlflow
+
 import config
-import inspect
 from constants.paths import URL_SIRENE4_EXTRACTION
 from evaluation.evaluator import Evaluator
 from strategies.base import EncodeStrategy
@@ -14,6 +15,7 @@ from strategies.rag import RAGStrategy
 from utils.data import get_ambiguous_data
 
 config.setup()
+
 
 async def run_encode(
     strategy_cls: EncodeStrategy,
@@ -45,7 +47,7 @@ async def run_encode(
 
 def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
     logging.info("Initializing strategy ==========================")
-    
+
     kwargs = {
         "generation_model": llm_name,
         "prompt_name": prompt_name,
@@ -64,7 +66,6 @@ def _load_data(strategy, third, sample_size=None):
     if sample_size is not None:
         data = data.head(n=sample_size).reset_index(drop=True)
     return data
-
 
 
 async def _retrieve_prompts(strategy, data, top_k, load_from_file=False):
@@ -112,6 +113,7 @@ def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, 
         "output_path": output_path,
         "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
         "top_k": top_k,
+        "URL_SIRENE4_EXTRACTION": URL_SIRENE4_EXTRACTION,
     }
 
     # If RAG
@@ -127,6 +129,7 @@ def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, 
         file_path = os.path.join(tmpdir, "df_eval.csv")
         df_eval.to_csv(file_path, index=False)
         mlflow.log_artifact(file_path, artifact_path="dataframes")
+
 
 if __name__ == "__main__":
     import argparse
