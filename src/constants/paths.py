@@ -1,4 +1,4 @@
-URL_SIRENE4_EXTRACTION = "s3://projet-ape/extractions/20250825_sirene4.parquet"
+URL_SIRENE4_EXTRACTION = "s3://projet-ape/data/25032024_26082025/nafrev2/raw.parquet"
 URL_SIRENE4_AMBIGUOUS_CAG = "s3://projet-ape/NAF-revision/relabeled-data-cag"
 URL_SIRENE4_AMBIGUOUS_RAG = "s3://projet-ape/NAF-revision/relabeled-data-rag"
 # URL_SIRENE4_UNIVOCAL = "s3://projet-ape/NAF-revision/relabeled-data/20241027_sirene4_univoques.parquet"

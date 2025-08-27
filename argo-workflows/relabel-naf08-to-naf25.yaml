@@ -59,7 +59,7 @@ spec:
         command: ["/bin/bash", -c]
         args:
           - |
-            git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
+            git clone -b quick-run https://github.com/InseeFrLab/codif-ape-nace-revision.git
             cd codif-ape-nace-revision/
             uv sync
             uv run huggingface-cli login --token $HF_TOKEN
