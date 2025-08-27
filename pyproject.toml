@@ -23,6 +23,8 @@ dependencies = [
     "jupyter>=1.1.1",
     "seaborn>=0.13.2",
     "plotly>=6.3.0",
+    "sentencepiece",
+    "flashinfer-python",
 ]
 authors = [
   {name="Thomas Faria", email="thomas.faria@insee.fr"}
