@@ -2,7 +2,6 @@ VAR_TO_KEEP = [
     "liasse_numero",
     "apet_finale",
     "libelle",
-    "evenement_type",
     "cj",
     "activ_nat_et",
     "liasse_type",
