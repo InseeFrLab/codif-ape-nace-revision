@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 from qdrant_client.http.models import NamedVector, SearchRequest
 from tqdm.asyncio import tqdm
 from vllm.sampling_params import GuidedDecodingParams, SamplingParams
-
+from vllm import LLM
 from constants.llm import (
     MAX_NEW_TOKEN,
     TEMPERATURE,
@@ -58,10 +58,22 @@ class RAGStrategy(EncodeStrategy):
         prompt_name: str = "rag-classifier",
         prompt_label: str = "production",
         reranker_model: str = None,
+        use_reranker: bool = True,
     ):
         super().__init__(generation_model)
         self.response_format = RAGResponse
         self.reranker_model = reranker_model
+        if self.reranker_model:
+            self.reranker = LLM(
+                model=self.reranker_model,
+                task="score",
+                hf_overrides={
+                    "architectures": ["Qwen3ForSequenceClassification"],
+                    "classifier_from_token": ["no", "yes"],
+                    "is_original_qwen3_reranker": True,
+                },
+            )
+
         self.collection_name = collection_name
         self.db = get_retriever(collection_name, self.reranker_model)
         self.prompt_name = prompt_name
@@ -109,7 +121,7 @@ class RAGStrategy(EncodeStrategy):
         embeddings = await self.db.embeddings.aembed_documents(queries)
 
         # Batch search in Qdrant
-        results = self._search_qdrant(embeddings, top_k, batch_size)
+        results = self._search_qdrant(embeddings, top_k, batch_size, use_reranker)
 
         # Build prompts from retrieved docs
         prompts = self._build_prompts(activities, results)
@@ -140,6 +152,7 @@ class RAGStrategy(EncodeStrategy):
         embeddings: List[List[float]],
         top_k: int,
         batch_size: int,
+        use_reranker: bool,
     ):
         """
         Run batched search requests in Qdrant.
@@ -155,11 +168,19 @@ class RAGStrategy(EncodeStrategy):
         search_requests = [
             SearchRequest(
                 vector=NamedVector(name=self.db.vector_name, vector=vec),
-                limit=top_k,
+                limit=35 if use_reranker else top_k,
                 with_payload=True,
             )
             for vec in embeddings
         ]
+
+        # init reranker  A SUPPRIMER
+        if use_reranker:
+            reranker = get_reranker(
+                self.db,
+                reranker_name=self.reranker_model,
+                k=35
+            )
 
         results = []
         num_chunks = ceil(len(search_requests) / batch_size)

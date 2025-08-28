@@ -38,7 +38,9 @@ async def run_encode(
     with mlflow.start_run(run_name=run_name):
         strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
         data = _load_data(strategy, third, sample_size)
-        prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file)
+        prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file)) 
+#        prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file)
+
         generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts)
         results = _process_and_merge(strategy, data, generation_outputs)
         metrics, df_eval = _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn, strategy)
@@ -158,8 +160,8 @@ if __name__ == "__main__":
     logging.info("==========================")
 
     STRATEGY_MAP = {
-        "rag": RAGStrategy,
         "cag": CAGStrategy,
+        "rag": RAGStrategy,
     }
 
     asyncio.run(
@@ -177,3 +179,18 @@ if __name__ == "__main__":
             top_k=args.top_k,
         )
     )
+
+
+strategy_cls=STRATEGY_MAP["rag"]
+collection_name="embeddings_qwen"
+llm_name="Qwen/Qwen3-0.6B"
+third=1
+prompts_from_file=False
+prompt_name="rag-classifier"
+prompt_label="production"
+sample_size=10
+top_k=10
+
+
+
+
