@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import tempfile
+os.chdir('codif-ape-nace-revision/src')
 import time
 
 import mlflow
@@ -15,6 +16,49 @@ from strategies.rag import RAGStrategy
 from utils.data import get_ambiguous_data
 
 config.setup()
+
+STRATEGY_MAP = {
+    "cag": CAGStrategy,
+    "rag": RAGStrategy,
+}
+
+strategy_cls=STRATEGY_MAP["rag"]
+collection_name="embeddings_qwen"
+llm_name="Qwen/Qwen3-0.6B"
+third=1
+prompts_from_file=False
+prompt_name="rag-classifier"
+prompt_label="production"
+sample_size=10
+top_k=10
+
+def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
+    logging.info("Initializing strategy ==========================")
+
+    kwargs = {
+        "generation_model": llm_name,
+        "prompt_name": prompt_name,
+        "prompt_label": prompt_label,
+    }
+
+    if strategy_cls in [RAGStrategy]:
+        kwargs["collection_name"] = collection_name
+
+    return strategy_cls(**kwargs)
+
+
+def _load_data(strategy, third, sample_size=None):
+    logging.info("Loading ambiguous data ==========================")
+    data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
+    if sample_size is not None:
+        data = data.head(n=sample_size).reset_index(drop=True)
+    return data
+
+strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
+data = _load_data(strategy, third, sample_size)
+
+
+
 
 
 async def run_encode(
