@@ -13,5 +13,6 @@ uv run src/encode_ambiguous.py \
     --llm_name "$llm_name" \
     --third 1 \
     --top_k "$top_k" \
-    --sample_size 100
+    --sample_size 100 \
+    --save_prompts
 

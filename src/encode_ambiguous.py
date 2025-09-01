@@ -70,6 +70,7 @@ async def run_encode(
     prompt_label: str,
     top_k: int,
     sample_size: int = None,
+    save_prompts: bool = False,
 ):
     """Main workflow to run encoding strategy, generate prompts, call LLM, evaluate, and log with MLflow."""
 
@@ -80,7 +81,7 @@ async def run_encode(
         strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
         data = _load_data(strategy, third, sample_size)
         # prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file)) 
-        prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file)
+        prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts)
 
         generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts)
         results = _process_and_merge(strategy, data, generation_outputs)
@@ -111,14 +112,14 @@ def _load_data(strategy, third, sample_size=None):
     return data
 
 
-async def _retrieve_prompts(strategy, data, top_k, load_from_file=False):
+async def _retrieve_prompts(strategy, data, top_k, load_from_file=False, save_prompts=False):
     logging.info("Retrieving prompts ==========================")
     start_time = time.time()
     prompts = await strategy.get_prompts(
         data,
         load_prompts_from_file=load_from_file,
         top_k=top_k,
-        save=True
+        save=save_prompts
     )
     retrieval_time_mn = (time.time() - start_time) / 60
     logging.info("Prompts retrieved")
@@ -190,6 +191,7 @@ if __name__ == "__main__":
     parser.add_argument("--llm_name", type=str, default="Qwen/Qwen3-0.6B")
     parser.add_argument("--third", type=int, default=None)
     parser.add_argument("--prompts_from_file", action="store_true")
+    parser.add_argument("--save_prompts", action="store_true")
     parser.add_argument("--prompt_name", type=str, default="rag-classifier")
     parser.add_argument("--prompt_label", type=str, default="production")
     parser.add_argument("--top_k", type=int, default=5)
@@ -223,5 +225,6 @@ if __name__ == "__main__":
             prompt_label=args.prompt_label,
             sample_size=args.sample_size,
             top_k=args.top_k,
+            save_prompts=args.save_prompts,
         )
     )
