@@ -47,6 +47,7 @@ class EncodeStrategy(ABC):
             model=self.generation_model,
             **model_args,
         )
+
         self.tokenizer = self.llm.get_tokenizer()
         self.response_format: Optional[BaseModel] = None
 

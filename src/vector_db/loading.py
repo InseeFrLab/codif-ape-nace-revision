@@ -83,11 +83,14 @@ def get_vector_db(collection_name: str) -> QdrantVectorStore:
 
 def get_retriever(collection_name: str, reranker_name: str = None):
     """Initialize the retriever from a vector database and a reranker."""
-    vector_db = get_vector_db(collection_name)
-    if reranker_name:
-        reranker = get_reranker_model(reranker_name)
-        compressor = CrossEncoderReranker(model=reranker, top_n=5)
-        return ContextualCompressionRetriever(
-            base_compressor=compressor, base_retriever=vector_db.as_retriever(search_kwargs={"k": 35})
-        )
+    vector_db: QdrantVectorStore = get_vector_db(collection_name)
     return vector_db
+
+
+# def get_reranker(vector_db: QdrantVectorStore, reranker_name: str, k: int = 35):
+#     reranker: HuggingFaceEmbeddings = get_reranker_model(reranker_name)
+#     compressor = CrossEncoderReranker(model=reranker, top_n=5)
+#     return ContextualCompressionRetriever(
+#         base_compressor=compressor,
+#         base_retriever=vector_db.as_retriever(search_kwargs={"k": k})
+#     )
