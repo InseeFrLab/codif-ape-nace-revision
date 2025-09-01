@@ -95,7 +95,7 @@ class RAGStrategy(EncodeStrategy):
         load_prompts_from_file: bool = False,
         top_k: int = 5,
         batch_size: int = 128,
-        save: bool: False,
+        save: bool = False,
     ) -> List[List[Dict]]:
         """
         Generate prompts for each row of the dataframe by retrieving
@@ -129,14 +129,11 @@ class RAGStrategy(EncodeStrategy):
 
         # Persist prompts for later reuse
         if save:
-            _save_prompts(prompts, self.prompt_name, self.prompt_label, self.collection_name)
+            self._save_prompts(prompts)
         return prompts
 
     def _save_prompts(
         prompts: List[List[Dict]],
-        prompt_name: str = "",
-        prompt_label: str = "",
-        collection: str = os.getenv("COLLECTION_NAME"),
     ) -> None:
         """Save prompts to a Parquet file.
 
@@ -148,7 +145,7 @@ class RAGStrategy(EncodeStrategy):
         fs = get_file_system()
         prompts_df: pd.DataFrame = prompts_to_df(prompts)
         prompts_df.to_parquet(
-            URL_PROMPTS_RAG.format(collection=collection, prompt_name=prompt_name, prompt_label=prompt_label),
+            URL_PROMPTS_RAG.format(collection=self.collection, prompt_name=self.prompt_name, prompt_label=self.prompt_label),
             filesystem=fs,
         )
 

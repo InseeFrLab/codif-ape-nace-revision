@@ -13,7 +13,7 @@ from constants.llm import (
     TEMPERATURE,
 )
 from constants.paths import URL_SIRENE4_AMBIGUOUS_CAG, URL_PROMPTS_CAG
-from utils.data import save_prompts, get_file_system, prompts_to_df
+from utils.data import get_file_system, prompts_to_df
 from .base import EncodeStrategy
 
 logger = logging.getLogger(__name__)
@@ -66,12 +66,18 @@ class CAGStrategy(EncodeStrategy):
             logprobs=1,
             guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
         )
+        self.prompt_name = prompt_name
+        self.prompt_label = prompt_label
 
     async def get_prompts(
-        self, data: pd.DataFrame, load_prompts_from_file: bool = False, top_k: int = 5
+        self, data: pd.DataFrame, load_prompts_from_file: bool = False,
+        top_k: int = 5, save: bool = False,
     ) -> List[List[Dict]]:
-        tasks = [self.create_prompt(row, top_k=top_k) for row in data.to_dict(orient="records")]
-        return await tqdm.gather(*tasks)
+        tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
+        prompts = await tqdm.gather(*tasks)
+        if save:
+            self._save_prompts(prompts)
+        return prompts
 
     @property
     def output_path(self):
@@ -85,7 +91,7 @@ class CAGStrategy(EncodeStrategy):
         df["nace08_valid"] = df["nace08_valid"].fillna("undefined").astype(str)
         return df
 
-    async def create_prompt(self, row: Dict[str, Any], save: bool = False) -> List[Dict]:
+    async def create_prompt(self, row: Dict[str, Any]) -> List[Dict]:
         activity = self._format_activity_description(row)
         nace08 = f"{row.get('apet_finale')[:2]}.{row.get('apet_finale')[2:]}"
         nace_old, proposed_codes, list_codes = self._format_documents(nace08)
@@ -96,14 +102,11 @@ class CAGStrategy(EncodeStrategy):
             proposed_codes=proposed_codes,
             list_proposed_codes=list_codes,
         )
-        if save:
-            _save_prompts(prompts, self.prompt_name, self.prompt_label)
         return prompts
 
     def _save_prompts(
+        self,
         prompts: List[List[Dict]],
-        prompt_name: str = "",
-        prompt_label: str = "",
     ) -> None:
         """Save prompts to a Parquet file.
 
@@ -115,7 +118,7 @@ class CAGStrategy(EncodeStrategy):
         fs = get_file_system()
         prompts_df: pd.DataFrame = prompts_to_df(prompts)
         prompts_df.to_parquet(
-            URL_PROMPTS_CAG.format(prompt_name=prompt_name, prompt_label=prompt_label),
+            URL_PROMPTS_CAG.format(prompt_name=self.prompt_name, prompt_label=self.prompt_label),
             filesystem=fs,
         )
 

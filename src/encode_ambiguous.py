@@ -114,7 +114,12 @@ def _load_data(strategy, third, sample_size=None):
 async def _retrieve_prompts(strategy, data, top_k, load_from_file=False):
     logging.info("Retrieving prompts ==========================")
     start_time = time.time()
-    prompts = await strategy.get_prompts(data, load_prompts_from_file=load_from_file, top_k=top_k)
+    prompts = await strategy.get_prompts(
+        data,
+        load_prompts_from_file=load_from_file,
+        top_k=top_k,
+        save=True
+    )
     retrieval_time_mn = (time.time() - start_time) / 60
     logging.info("Prompts retrieved")
     return prompts, retrieval_time_mn
