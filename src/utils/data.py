@@ -292,25 +292,25 @@ def df_to_prompts(df: pd.DataFrame) -> List[List[Dict]]:
     return prompt_list
 
 
-def save_prompts(
-    prompts: List[List[Dict]],
-    prompt_name: str = "",
-    prompt_label: str = "",
-    collection: str = os.getenv("COLLECTION_NAME"),
-) -> None:
-    """Save prompts to a Parquet file.
+# def save_prompts(
+#     prompts: List[List[Dict]],
+#     prompt_name: str = "",
+#     prompt_label: str = "",
+#     collection: str = os.getenv("COLLECTION_NAME"),
+# ) -> None:
+#     """Save prompts to a Parquet file.
 
-    Args:
-        prompts: List of conversations to save
-        prompt_name: Name of the Langfuse prompt
-        prompt_label: Label for the Langfuse prompt
-    """
-    fs = get_file_system()
-    prompts_df: pd.DataFrame = prompts_to_df(prompts)
-    prompts_df.to_parquet(
-        URL_PROMPTS_RAG.format(collection=collection, prompt_name=prompt_name, prompt_label=prompt_label),
-        filesystem=fs,
-    )
+#     Args:
+#         prompts: List of conversations to save
+#         prompt_name: Name of the Langfuse prompt
+#         prompt_label: Label for the Langfuse prompt
+#     """
+#     fs = get_file_system()
+#     prompts_df: pd.DataFrame = prompts_to_df(prompts)
+#     prompts_df.to_parquet(
+#         URL_PROMPTS_RAG.format(collection=collection, prompt_name=prompt_name, prompt_label=prompt_label),
+#         filesystem=fs,
+#     )
 
 
 def load_prompts(

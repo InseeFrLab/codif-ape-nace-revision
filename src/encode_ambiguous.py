@@ -79,8 +79,8 @@ async def run_encode(
     with mlflow.start_run(run_name=run_name):
         strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
         data = _load_data(strategy, third, sample_size)
-        prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file)) 
-#        prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file)
+        # prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file)) 
+        prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file)
 
         generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts)
         results = _process_and_merge(strategy, data, generation_outputs)

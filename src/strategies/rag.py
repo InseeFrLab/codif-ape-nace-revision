@@ -16,9 +16,9 @@ from constants.llm import (
     MAX_NEW_TOKEN,
     TEMPERATURE,
 )
-from constants.paths import URL_SIRENE4_AMBIGUOUS_RAG
+from constants.paths import URL_SIRENE4_AMBIGUOUS_RAG, URL_PROMPTS_RAG
 from constants.vector_db import MAX_CONCURRENCY
-from utils.data import load_prompts, save_prompts
+from utils.data import load_prompts
 from vector_db.loading import get_retriever
 
 from .base import EncodeStrategy
@@ -95,6 +95,7 @@ class RAGStrategy(EncodeStrategy):
         load_prompts_from_file: bool = False,
         top_k: int = 5,
         batch_size: int = 128,
+        save: bool: False,
     ) -> List[List[Dict]]:
         """
         Generate prompts for each row of the dataframe by retrieving
@@ -127,8 +128,30 @@ class RAGStrategy(EncodeStrategy):
         prompts = self._build_prompts(activities, results)
 
         # Persist prompts for later reuse
-        save_prompts(prompts, self.prompt_name, self.prompt_label, self.collection_name)
+        if save:
+            _save_prompts(prompts, self.prompt_name, self.prompt_label, self.collection_name)
         return prompts
+
+    def _save_prompts(
+        prompts: List[List[Dict]],
+        prompt_name: str = "",
+        prompt_label: str = "",
+        collection: str = os.getenv("COLLECTION_NAME"),
+    ) -> None:
+        """Save prompts to a Parquet file.
+
+        Args:
+            prompts: List of conversations to save
+            prompt_name: Name of the Langfuse prompt
+            prompt_label: Label for the Langfuse prompt
+        """
+        fs = get_file_system()
+        prompts_df: pd.DataFrame = prompts_to_df(prompts)
+        prompts_df.to_parquet(
+            URL_PROMPTS_RAG.format(collection=collection, prompt_name=prompt_name, prompt_label=prompt_label),
+            filesystem=fs,
+        )
+
 
     def _prepare_queries(self, data: pd.DataFrame):
         """

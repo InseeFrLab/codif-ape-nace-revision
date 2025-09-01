@@ -10,3 +10,4 @@ URL_GROUND_TRUTH = (
     "s3://projet-ape/label-studio/annotation-campaign-2024/rev-NAF2025/preprocessed/training_data_NAF2025.parquet"
 )
 URL_PROMPTS_RAG = "s3://projet-ape/NAF-revision/prompts/{collection}/prompts-rag-{prompt_name}-{prompt_label}.parquet"
+URL_PROMPTS_CAG = "s3://projet-ape/NAF-revision/prompts/cag/prompts-rag-{prompt_name}-{prompt_label}.parquet"

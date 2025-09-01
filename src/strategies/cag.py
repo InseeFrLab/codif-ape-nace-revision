@@ -12,8 +12,8 @@ from constants.llm import (
     MAX_NEW_TOKEN,
     TEMPERATURE,
 )
-from constants.paths import URL_SIRENE4_AMBIGUOUS_CAG
-
+from constants.paths import URL_SIRENE4_AMBIGUOUS_CAG, URL_PROMPTS_CAG
+from utils.data import save_prompts, get_file_system, prompts_to_df
 from .base import EncodeStrategy
 
 logger = logging.getLogger(__name__)
@@ -85,19 +85,53 @@ class CAGStrategy(EncodeStrategy):
         df["nace08_valid"] = df["nace08_valid"].fillna("undefined").astype(str)
         return df
 
-    async def create_prompt(self, row: Dict[str, Any], top_k: int = 5) -> List[Dict]:
+    async def create_prompt(self, row: Dict[str, Any], save: bool = False) -> List[Dict]:
         activity = self._format_activity_description(row)
         nace08 = f"{row.get('apet_finale')[:2]}.{row.get('apet_finale')[2:]}"
         nace_old, proposed_codes, list_codes = self._format_documents(nace08)
 
-        return self.prompt_template.compile(
+        prompts = self.prompt_template.compile(
             activity=activity,
             nace_old=nace08,
             proposed_codes=proposed_codes,
             list_proposed_codes=list_codes,
         )
+        if save:
+            _save_prompts(prompts, self.prompt_name, self.prompt_label)
+        return prompts
+
+    def _save_prompts(
+        prompts: List[List[Dict]],
+        prompt_name: str = "",
+        prompt_label: str = "",
+    ) -> None:
+        """Save prompts to a Parquet file.
+
+        Args:
+            prompts: List of conversations to save
+            prompt_name: Name of the Langfuse prompt
+            prompt_label: Label for the Langfuse prompt
+        """
+        fs = get_file_system()
+        prompts_df: pd.DataFrame = prompts_to_df(prompts)
+        prompts_df.to_parquet(
+            URL_PROMPTS_CAG.format(prompt_name=prompt_name, prompt_label=prompt_label),
+            filesystem=fs,
+        )
+
 
     def _format_documents(self, nace08: str) -> Tuple[str, str, str]:
+        """Format documents related to NACE classification codes.
+
+        Args:
+            nace08: The NACE08 code to format documents for.
+
+        Returns:
+            A tuple containing:
+            - nace_old: Formatted string of the NACE08 code and label
+            - proposed_codes: Formatted string of proposed NACE2025 codes with their details
+            - list_codes: Comma-separated string of proposed NACE2025 codes
+        """
         nace2025_codes = next((m.naf2025 for m in self.mapping if m.code == nace08))
         nace08_code = next((m for m in self.mapping if m.code == nace08))
 
