@@ -17,10 +17,10 @@ MODEL_TO_ARGS = {
         "max_model_len": 25000,
         "gpu_memory_utilization": 0.95,
     },
-    "Qwen/Qwen3-0.6B": {
-        "max_model_len": 10000, 
-        "gpu_memory_utilization": 0.05,
-    },
+    # "Qwen/Qwen3-0.6B": {
+    #     "max_model_len": 10000, 
+    #     "gpu_memory_utilization": 0.05,
+    # },
     "google/gemma-3-27b-it": {
         "max_model_len": 25000,
         "gpu_memory_utilization": 0.95,

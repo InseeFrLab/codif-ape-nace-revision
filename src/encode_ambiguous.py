@@ -17,20 +17,24 @@ from utils.data import get_ambiguous_data
 
 config.setup()
 
+
 # STRATEGY_MAP = {
 #     "cag": CAGStrategy,
 #     "rag": RAGStrategy,
 # }
 
-# strategy_cls=STRATEGY_MAP["rag"]
-# collection_name="embeddings_qwen"
+# strategy_cls=STRATEGY_MAP["cag"]
+# experiment_name = "Test"
+# run_name = None
+# collection_name=None
 # llm_name="Qwen/Qwen3-0.6B"
 # third=1
 # prompts_from_file=False
-# prompt_name="rag-classifier"
+# save_prompts=True
+# prompt_name="cag-classifier"
 # prompt_label="production"
 # sample_size=200
-# top_k=10
+# top_k=5
 
 # def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
 #     logging.info("Initializing strategy ==========================")
@@ -187,7 +191,7 @@ if __name__ == "__main__":
     parser.add_argument("--strategy", choices=["rag", "cag"], required=True)
     parser.add_argument("--experiment_name", type=str, default="Test")
     parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument("--collection_name", type=str)
+    parser.add_argument("--collection_name", type=str, default=None)
     parser.add_argument("--llm_name", type=str, default="Qwen/Qwen3-0.6B")
     parser.add_argument("--third", type=int, default=None)
     parser.add_argument("--prompts_from_file", action="store_true")
