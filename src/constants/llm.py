@@ -25,4 +25,8 @@ MODEL_TO_ARGS = {
         "max_model_len": 25000,
         "gpu_memory_utilization": 0.95,
     },
+    "openai/gpt-oss-20b": {
+        "max_model_len": 25000,
+        "gpu_memory_utilization": 0.95,
+    },
 }

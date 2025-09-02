@@ -90,6 +90,7 @@ async def run_encode(
 
         generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts)
         results = _process_and_merge(strategy, data, generation_outputs)
+        print(results)
         metrics, df_eval = _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn, strategy)
         _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k)
 
@@ -201,7 +202,7 @@ if __name__ == "__main__":
     parser.add_argument("--prompt_label", type=str, default="production")
     parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--sample_size", type=int, default=None)
-    parser.add_argument("--only_annotated", type=int, default=True)
+    parser.add_argument("--only_annotated", type=bool, default=True)
 
     args = parser.parse_args()
 
