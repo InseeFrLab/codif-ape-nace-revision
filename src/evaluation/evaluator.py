@@ -44,7 +44,14 @@ class Evaluator:
         )
 
         # Step 6: Compute additional metrics
-        metrics = accuracies | {"eval_size": eval_df.shape[0], "mapping_ok": eval_df["mapping_ok"].sum()}
+        metrics = (
+            accuracies
+            | {
+                "eval_size": eval_df.shape[0],
+                "mapping_ok": eval_df["mapping_ok"].sum(),
+                "mapping_ok_pct": (eval_df["mapping_ok"].sum()) / eval_df.shape[0]
+            }
+        )
         return metrics, eval_df
 
     def get_prompt_mapping(self, prompts: List, ground_truth: pd.DataFrame) -> pd.DataFrame:
