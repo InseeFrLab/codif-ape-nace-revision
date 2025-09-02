@@ -9,8 +9,8 @@ uv run src/encode_ambiguous.py \
     --strategy cag \
     --llm_name "$llm_name" \
     --top_k "$top_k" \
-    --save_prompts
+    --save_prompts \
+    --sample_size 1000
 
 #    --third 1 \
-#--sample_size 1000 \
 

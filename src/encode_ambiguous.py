@@ -75,6 +75,7 @@ async def run_encode(
     top_k: int,
     sample_size: int = None,
     save_prompts: bool = False,
+    only_annotated: bool = True,
 ):
     """Main workflow to run encoding strategy, generate prompts, call LLM, evaluate, and log with MLflow."""
 
@@ -83,7 +84,7 @@ async def run_encode(
 
     with mlflow.start_run(run_name=run_name):
         strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
-        data = _load_data(strategy, third, sample_size)
+        data = _load_data(strategy, third, only_annotated, sample_size)
         # prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file)) 
         prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts)
 
@@ -108,9 +109,9 @@ def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, coll
     return strategy_cls(**kwargs)
 
 
-def _load_data(strategy, third, sample_size=None):
+def _load_data(strategy, third, only_annotated, sample_size=None):
     logging.info("Loading ambiguous data ==========================")
-    data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
+    data = get_ambiguous_data(strategy.mapping, third, only_annotated)
     if sample_size is not None:
         data = data.head(n=sample_size).reset_index(drop=True)
     return data
@@ -200,6 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("--prompt_label", type=str, default="production")
     parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--sample_size", type=int, default=None)
+    parser.add_argument("--only_annotated", type=int, default=True)
 
     args = parser.parse_args()
 
@@ -230,5 +232,6 @@ if __name__ == "__main__":
             sample_size=args.sample_size,
             top_k=args.top_k,
             save_prompts=args.save_prompts,
+            only_annotated=args.only_annotated,
         )
     )
