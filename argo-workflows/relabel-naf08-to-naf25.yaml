@@ -14,9 +14,9 @@ spec:
     parameters:
       - name: params-conf-list
         value: '[
-          {"LLM_NAME": "Qwen/Qwen3-0.6B", "THIRD": 1, "STRATEGY": "cag"},
-          {"LLM_NAME": "Qwen/Qwen3-0.6B", "THIRD": 2, "STRATEGY": "cag"},
-          {"LLM_NAME": "Qwen/Qwen3-0.6B", "THIRD": 3, "STRATEGY": "cag"}
+          {"LLM_NAME": "Qwen/Qwen3-0.6B", "THIRD": 1, "SAMPLE_SIZE": 100, "STRATEGY": "cag"},
+          {"LLM_NAME": "Qwen/Qwen3-0.6B", "THIRD": 2, "SAMPLE_SIZE": 100, "STRATEGY": "cag"},
+          {"LLM_NAME": "Qwen/Qwen3-0.6B", "THIRD": 3, "SAMPLE_SIZE": 100, "STRATEGY": "cag"}
           ]'
 
   templates:
@@ -33,6 +33,8 @@ spec:
                   value: "{{item.THIRD}}"
                 - name: STRATEGY
                   value: "{{item.STRATEGY}}"
+                - name: SAMPLE_SIZE
+                  value: "{{item.SAMPLE_SIZE}}"
             withParam: "{{workflow.parameters.params-conf-list}}"
     - name: run-relabel
       inputs:
@@ -40,6 +42,7 @@ spec:
           - name: LLM_NAME
           - name: THIRD
           - name: STRATEGY
+          - name: SAMPLE_SIZE
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -60,11 +63,12 @@ spec:
         args:
           - |
             git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
+            git checkout doc-jp
             cd codif-ape-nace-revision/
             uv sync
             uv run huggingface-cli login --token $HF_TOKEN
             uv run huggingface-cli download {{inputs.parameters.LLM_NAME}}
-            uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}} --third {{inputs.parameters.THIRD}}
+            uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name Test --llm_name {{inputs.parameters.LLM_NAME}} --third {{inputs.parameters.THIRD}} --sample_size {{inputs.parameters.SAMPLE_SIZE}}
         volumeMounts:
           - mountPath: /dev/shm
             name: dshm
