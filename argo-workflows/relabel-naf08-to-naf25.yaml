@@ -14,9 +14,9 @@ spec:
     parameters:
       - name: params-conf-list
         value: '[
-          {"LLM_NAME": "Qwen/Qwen3-32B", "STRATEGY": "cag"},
-          {"LLM_NAME": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", "STRATEGY": "cag"},
-          {"LLM_NAME": "mistralai/Mistral-Small-3.2-24B-Instruct-2506", "STRATEGY": "cag"}
+          {"LLM_NAME": "Qwen/Qwen3-32B", "STRATEGY": "cag", "only_annotated": "false"},
+          {"LLM_NAME": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", "STRATEGY": "cag", "only_annotated": "false"},
+          {"LLM_NAME": "mistralai/Mistral-Small-3.2-24B-Instruct-2506", "STRATEGY": "cag", "only_annotated": "false"}
           ]'
 
   templates:
@@ -31,12 +31,15 @@ spec:
                   value: "{{item.LLM_NAME}}"
                 - name: STRATEGY
                   value: "{{item.STRATEGY}}"
+                - name: only_annotated
+                  value: "{{item.only_annotated}}"
             withParam: "{{workflow.parameters.params-conf-list}}"
     - name: run-relabel
       inputs:
         parameters:
           - name: LLM_NAME
           - name: STRATEGY
+          - name: only_annotated
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -67,7 +70,15 @@ spec:
             uv sync
             uv run huggingface-cli login --token $HF_TOKEN
             uv run huggingface-cli download {{inputs.parameters.LLM_NAME}}
-            uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}}
+            
+            CMD="uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}}"
+            
+            if [[ "{{inputs.parameters.only_annotated}}" == "false" ]]; then
+              CMD="$CMD --only_annotated False"
+            fi
+            
+            echo "Executing: $CMD"
+            eval $CMD
         volumeMounts:
           - mountPath: /dev/shm
             name: dshm
