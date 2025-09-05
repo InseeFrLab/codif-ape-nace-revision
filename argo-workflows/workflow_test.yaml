@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  name: run-relabel-naf08-to-naf25
+  name: run-relabel-naf08-to-naf25-test
 spec:
   serviceAccountName: workflow
   volumes:
@@ -29,14 +29,20 @@ spec:
               parameters:
                 - name: LLM_NAME
                   value: "{{item.LLM_NAME}}"
+                # - name: THIRD
+                  # value: "{{item.THIRD}}"
                 - name: STRATEGY
                   value: "{{item.STRATEGY}}"
+                - name: SAMPLE_SIZE
+                  value: "{{item.SAMPLE_SIZE}}"
             withParam: "{{workflow.parameters.params-conf-list}}"
     - name: run-relabel
       inputs:
         parameters:
           - name: LLM_NAME
+          #- name: THIRD
           - name: STRATEGY
+          - name: SAMPLE_SIZE
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -67,7 +73,9 @@ spec:
             uv sync
             uv run huggingface-cli login --token $HF_TOKEN
             uv run huggingface-cli download {{inputs.parameters.LLM_NAME}}
-            uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}}
+            uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name Test --llm_name {{inputs.parameters.LLM_NAME}} --sample_size {{inputs.parameters.SAMPLE_SIZE}}
+# --third {{inputs.parameters.THIRD}}
+# --sample_size {{inputs.parameters.SAMPLE_SIZE}}
         volumeMounts:
           - mountPath: /dev/shm
             name: dshm
