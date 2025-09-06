@@ -28,13 +28,14 @@ config.setup()
 # run_name = None
 # collection_name=None
 # llm_name="Qwen/Qwen3-0.6B"
-# third=1
+# third=None
 # prompts_from_file=False
-# save_prompts=True
+# save_prompts=False
 # prompt_name="cag-classifier"
 # prompt_label="production"
-# sample_size=200
-# top_k=5
+# sample_size=None
+# top_k=None
+# only_annotated=False
 
 # def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
 #     logging.info("Initializing strategy ==========================")
@@ -51,15 +52,22 @@ config.setup()
 #     return strategy_cls(**kwargs)
 
 
-# def _load_data(strategy, third, sample_size=None):
+# def _load_data(strategy, third, only_annotated, sample_size=None):
 #     logging.info("Loading ambiguous data ==========================")
-#     data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
+#     data = get_ambiguous_data(strategy.mapping, third, only_annotated)
 #     if sample_size is not None:
 #         data = data.head(n=sample_size).reset_index(drop=True)
 #     return data
 
 # strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
-# data = _load_data(strategy, third, sample_size)
+# data = _load_data(strategy, third, only_annotated, sample_size)
+# data.shape
+
+
+
+
+
+
 
 
 async def run_encode(
@@ -73,9 +81,9 @@ async def run_encode(
     prompt_name: str,
     prompt_label: str,
     top_k: int,
+    only_annotated: bool,
     sample_size: int = None,
     save_prompts: bool = False,
-    only_annotated: bool = True,
 ):
     """Main workflow to run encoding strategy, generate prompts, call LLM, evaluate, and log with MLflow."""
 
@@ -202,9 +210,13 @@ if __name__ == "__main__":
     parser.add_argument("--prompt_label", type=str, default="production")
     parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--sample_size", type=int, default=None)
-    parser.add_argument("--only_annotated", type=bool, default=True)
+    parser.add_argument("--only_annotated", action="store_true")
 
     args = parser.parse_args()
+    
+    print("Arguments used :")
+    for arg, value in vars(args).items():
+        print(f"  {arg}: {value}")
 
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
 
