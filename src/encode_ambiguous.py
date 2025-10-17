@@ -210,7 +210,12 @@ if __name__ == "__main__":
     parser.add_argument("--prompt_label", type=str, default="production")
     parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--sample_size", type=int, default=None)
-    parser.add_argument("--only_annotated", action="store_true")
+    parser.add_argument(
+        "--only_annotated",
+        type=str,
+        choices=["true", "false"],
+        default="false",
+    )
 
     args = parser.parse_args()
     
@@ -219,6 +224,11 @@ if __name__ == "__main__":
         print(f"  {arg}: {value}")
 
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
+
+    if args.only_annotated == "true":
+        args.only_annotated = True
+    else:
+        args.only_annotated = False 
 
     # Logging of parameters
     logging.info("===== Run parameters =====")
