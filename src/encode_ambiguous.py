@@ -93,7 +93,7 @@ async def run_encode(
     with mlflow.start_run(run_name=run_name):
         strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
         data = _load_data(strategy, third, only_annotated, sample_size)
-        # prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file)) 
+        # prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
         prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts)
 
         generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts)
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     parser.add_argument("--third", type=int, default=None)
     parser.add_argument("--prompts_from_file", action="store_true")
     parser.add_argument("--save_prompts", action="store_true")
-    parser.add_argument("--prompt_name", type=str, default="rag-classifier")
+    parser.add_argument("--prompt_name", type=str, default=None)
     parser.add_argument("--prompt_label", type=str, default="production")
     parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--sample_size", type=int, default=None)
@@ -219,16 +219,37 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
-    print("Arguments used :")
-    for arg, value in vars(args).items():
-        print(f"  {arg}: {value}")
+    # args_list = [
+    #     "--strategy",
+    #     "cag",
+    #     "--experiment_name",
+    #     "NACE2025_DATASET",
+    #     "--llm_name",
+    #     "Qwen/Qwen3-32B",
+    #     "--sample_size",
+    #     "1000",
+    #     "--only_annotated",
+    #     "false"
+    # ]
+    # args = parser.parse_args(args_list)
+
+
 
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
 
     if args.only_annotated == "true":
         args.only_annotated = True
     else:
-        args.only_annotated = False 
+        args.only_annotated = False
+
+    if args.strategy == "cag":
+        args.prompt_name = "cag-classifier"
+    else:
+        args.prompt_name = "rag-classifier"
+
+    print("Arguments used :")
+    for arg, value in vars(args).items():
+        print(f"  {arg}: {value}")
 
     # Logging of parameters
     logging.info("===== Run parameters =====")
@@ -258,3 +279,18 @@ if __name__ == "__main__":
             only_annotated=args.only_annotated,
         )
     )
+
+
+# strategy_cls=STRATEGY_MAP[args.strategy]
+# experiment_name=args.experiment_name
+# run_name=args.run_name
+# collection_name=args.collection_name
+# llm_name=args.llm_name
+# third=args.third
+# prompts_from_file=args.prompts_from_file
+# prompt_name=args.prompt_name
+# prompt_label=args.prompt_label
+# sample_size=args.sample_size
+# top_k=args.top_k
+# save_prompts=args.save_prompts
+# only_annotated=args.only_annotated

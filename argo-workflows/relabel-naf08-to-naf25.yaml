@@ -22,6 +22,7 @@ spec:
   templates:
     - name: main
       dag:
+        parallelism: 2
         tasks:
           - name: relabel-naf08-to-naf25
             template: run-relabel
