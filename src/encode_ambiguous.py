@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import tempfile
-#os.chdir('./codif-ape-nace-revision/src')
+os.chdir('./codif-ape-nace-revision/src')
 import time
 
 import mlflow
@@ -17,51 +17,125 @@ from utils.data import get_ambiguous_data
 
 config.setup()
 
+STRATEGY_MAP = {
+    "cag": CAGStrategy,
+    "rag": RAGStrategy,
+}
 
-# STRATEGY_MAP = {
-#     "cag": CAGStrategy,
-#     "rag": RAGStrategy,
-# }
+strategy_cls=STRATEGY_MAP["cag"]
+experiment_name = "Test"
+run_name = None
+collection_name=None
+llm_name="Qwen/Qwen3-0.6B"
+third=None
+prompts_from_file=False
+save_prompts=False
+prompt_name="cag-classifier"
+prompt_label="production"
+sample_size=None
+top_k=None
+only_annotated=False
 
-# strategy_cls=STRATEGY_MAP["cag"]
-# experiment_name = "Test"
-# run_name = None
-# collection_name=None
-# llm_name="Qwen/Qwen3-0.6B"
-# third=None
-# prompts_from_file=False
-# save_prompts=False
-# prompt_name="cag-classifier"
-# prompt_label="production"
-# sample_size=None
-# top_k=None
-# only_annotated=False
+def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
+    logging.info("Initializing strategy ==========================")
 
-# def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
-#     logging.info("Initializing strategy ==========================")
+    kwargs = {
+        "generation_model": llm_name,
+        "prompt_name": prompt_name,
+        "prompt_label": prompt_label,
+    }
 
-#     kwargs = {
-#         "generation_model": llm_name,
-#         "prompt_name": prompt_name,
-#         "prompt_label": prompt_label,
-#     }
+    if strategy_cls in [RAGStrategy]:
+        kwargs["collection_name"] = collection_name
 
-#     if strategy_cls in [RAGStrategy]:
-#         kwargs["collection_name"] = collection_name
-
-#     return strategy_cls(**kwargs)
+    return strategy_cls(**kwargs)
 
 
-# def _load_data(strategy, third, only_annotated, sample_size=None):
-#     logging.info("Loading ambiguous data ==========================")
-#     data = get_ambiguous_data(strategy.mapping, third, only_annotated)
-#     if sample_size is not None:
-#         data = data.head(n=sample_size).reset_index(drop=True)
-#     return data
+def _load_data(strategy, third, only_annotated, sample_size=None):
+    logging.info("Loading ambiguous data ==========================")
+    data = get_ambiguous_data(strategy.mapping, third, only_annotated)
+    if sample_size is not None:
+        data = data.head(n=sample_size).reset_index(drop=True)
+    return data
 
-# strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
-# data = _load_data(strategy, third, only_annotated, sample_size)
-# data.shape
+
+async def _retrieve_prompts(strategy, data, top_k, load_from_file=False, save_prompts=False):
+    logging.info("Retrieving prompts ==========================")
+    start_time = time.time()
+    prompts = await strategy.get_prompts(
+        data,
+        load_prompts_from_file=load_from_file,
+        top_k=top_k,
+        save=save_prompts
+    )
+    retrieval_time_mn = (time.time() - start_time) / 60
+    logging.info("Prompts retrieved")
+    return prompts, retrieval_time_mn
+
+def _generate_outputs(strategy, prompts):
+    logging.info("Starting generation ==========================")
+    start_time = time.time()
+    outputs = strategy.call_llm(prompts, strategy.sampling_params)
+    generation_time_mn = (time.time() - start_time) / 60
+    return outputs, generation_time_mn
+
+strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
+data = _load_data(strategy, third, only_annotated, sample_size)
+data.shape
+
+prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
+len(prompts)
+prompts = prompts[:20000]
+
+# Paramètre de batching
+BATCH_SIZE = 10000
+
+all_generation_outputs = []
+total_generation_time_mn = 0.0
+
+# Boucle sur les batchs
+for i in range(0, len(prompts), BATCH_SIZE):
+    batch_prompts = prompts[i:i + BATCH_SIZE]
+    print(f"🚀 Traitement du batch {i // BATCH_SIZE + 1} / {len(prompts) // BATCH_SIZE + 1} "
+          f"({len(batch_prompts)} prompts)")
+
+    # Génération pour ce batch
+    generation_outputs, generation_time_mn = _generate_outputs(strategy, batch_prompts)
+
+    # Sauvegarde des résultats intermédiaires (optionnel mais recommandé)
+    all_generation_outputs.extend(generation_outputs)
+    total_generation_time_mn += generation_time_mn
+
+    # Libération mémoire pour éviter la montée continue de RAM
+    del batch_prompts
+    del generation_outputs
+    import gc, torch
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+print(f"✅ Génération terminée pour {len(prompts)} prompts.")
+print(f"⏱ Temps total de génération : {total_generation_time_mn:.2f} minutes")
+
+
+len(all_generation_outputs)
+type(all_generation_outputs)
+type(all_generation_outputs[0])
+sys.getsizeof(all_generation_outputs) * 700
+
+
+prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
+batch_prompts = prompts[0:10000]
+len(batch_prompts)
+generation_outputs, generation_time_mn = _generate_outputs(strategy, batch_prompts)
+
+
+
+
+# prompts[0][1].keys()
+# prompts[0][1]["content"].keys()
+# type(prompts[0][1]["content"])
+
 
 
 
