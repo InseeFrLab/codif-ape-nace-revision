@@ -32,6 +32,18 @@ class EncodeStrategy(ABC):
         self.mapping = fetch_mapping()
         self.generation_model = generation_model
 
+        # Initialiser le LLM
+        self.initialize_llm()
+        self.response_format: Optional[BaseModel] = None
+
+    def initialize_llm(self):
+        """
+        (Re)crée l'instance LLM avec les paramètres du modèle.
+        """
+        if hasattr(self, 'llm') and self.llm is not None:
+            logger.warning("LLM déjà initialisé. Suppression de l'instance existante.")
+            self.cleanup_llm()
+        
         model_args = MODEL_TO_ARGS.get(self.generation_model, {}).copy()
         model_args["enable_prefix_caching"] = False
 
@@ -48,9 +60,22 @@ class EncodeStrategy(ABC):
             model=self.generation_model,
             **model_args,
         )
-
         self.tokenizer = self.llm.get_tokenizer()
-        self.response_format: Optional[BaseModel] = None
+        logger.info(f"LLM {self.generation_model} initialisé avec succès")
+
+    def cleanup_llm(self):
+        """
+        Supprime l'instance LLM pour libérer les ressources GPU/mémoire.
+        """
+        if hasattr(self, 'llm') and self.llm is not None:
+            # Libérer les ressources GPU si disponibles
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Supprimer l'instance LLM
+            del self.llm
+            self.llm = None
+            logger.info(f"LLM {self.generation_model} supprimé et ressources libérées")
 
     @abstractmethod
     def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:

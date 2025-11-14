@@ -80,7 +80,7 @@ def _generate_outputs(strategy, prompts):
     return outputs, generation_time_mn
 
 strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
-data = _load_data(strategy, third, only_annotated, sample_size = 40000)
+data = _load_data(strategy, third, only_annotated, sample_size = 30000)
 data.shape
 
 prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
@@ -99,6 +99,7 @@ for i in range(0, len(prompts), BATCH_SIZE):
     print(f"🚀 Traitement du batch {i // BATCH_SIZE + 1} / {len(prompts) // BATCH_SIZE + 1} "
           f"({len(batch_prompts)} prompts)")
 
+    strategy.initialize_llm()
     # Génération pour ce batch
     generation_outputs, generation_time_mn = _generate_outputs(strategy, batch_prompts)
 
@@ -107,6 +108,7 @@ for i in range(0, len(prompts), BATCH_SIZE):
     total_generation_time_mn += generation_time_mn
 
     # Libération mémoire pour éviter la montée continue de RAM
+    strategy.cleanup_llm()
     del batch_prompts
     del generation_outputs
     import gc, torch
