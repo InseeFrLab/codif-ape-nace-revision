@@ -1,12 +1,13 @@
-# uv run src/encode_ambiguous_test.py --strategy rag --experiment_name NACE2025_DATASET --llm_name Qwen/Qwen3-0.6B --third 1
-
 import asyncio
 import logging
 import os
 import tempfile
+os.chdir('./codif-ape-nace-revision/src')
 import time
 
 import mlflow
+import gc
+import torch
 
 import config
 from constants.paths import URL_SIRENE4_EXTRACTION
@@ -17,6 +18,126 @@ from strategies.rag import RAGStrategy
 from utils.data import get_ambiguous_data
 
 config.setup()
+
+STRATEGY_MAP = {
+    "cag": CAGStrategy,
+    "rag": RAGStrategy,
+}
+
+strategy_cls=STRATEGY_MAP["cag"]
+experiment_name = "Test"
+run_name = None
+collection_name=None
+llm_name="Qwen/Qwen3-32B"
+third=None
+prompts_from_file=False
+save_prompts=False
+prompt_name="cag-classifier"
+prompt_label="production"
+sample_size=None
+top_k=None
+only_annotated=False
+
+def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
+    logging.info("Initializing strategy ==========================")
+
+    kwargs = {
+        "generation_model": llm_name,
+        "prompt_name": prompt_name,
+        "prompt_label": prompt_label,
+    }
+
+    if strategy_cls in [RAGStrategy]:
+        kwargs["collection_name"] = collection_name
+
+    return strategy_cls(**kwargs)
+
+
+def _load_data(strategy, third, only_annotated, sample_size=None):
+    logging.info("Loading ambiguous data ")
+    data = get_ambiguous_data(strategy.mapping, third, only_annotated)
+    if sample_size is not None:
+        data = data.head(n=sample_size).reset_index(drop=True)
+    return data
+
+
+async def _retrieve_prompts(strategy, data, top_k, load_from_file=False, save_prompts=False):
+    logging.info("Retrieving prompts ==========================")
+    start_time = time.time()
+    prompts = await strategy.get_prompts(
+        data,
+        load_prompts_from_file=load_from_file,
+        top_k=top_k,
+        save=save_prompts
+    )
+    retrieval_time_mn = (time.time() - start_time) / 60
+    logging.info("Prompts retrieved")
+    return prompts, retrieval_time_mn
+
+def _generate_outputs(strategy, prompts):
+    logging.info("Starting generation ==========================")
+    start_time = time.time()
+    outputs = strategy.call_llm(prompts, strategy.sampling_params)
+    generation_time_mn = (time.time() - start_time) / 60
+    return outputs, generation_time_mn
+
+logging.info("Initialisation de la strategie =======")
+strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
+
+logging.info("Import des données =======")
+data = _load_data(strategy, third, only_annotated, sample_size=100000)
+data.shape
+
+logging.info("Création de tous les prompts =======")
+prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
+
+logging.info(f"Nombre total de prompts: {len(prompts)} =======")
+
+#prompts = prompts[:20000]
+
+# Paramètre de batching
+BATCH_SIZE = 20000
+logging.info(f"Taille des batches: {BATCH_SIZE}")
+
+all_generation_outputs = []
+total_generation_time_mn = 0.0
+
+# Boucle sur les batchs
+for i in range(0, len(prompts), BATCH_SIZE):
+    batch_prompts = prompts[i:i + BATCH_SIZE]
+    logging.info(f"🚀 Traitement du batch {i // BATCH_SIZE + 1} / {len(prompts) // BATCH_SIZE + 1} "
+          f"({len(batch_prompts)} prompts)")
+
+    if i > 0:
+        logging.info("Init du llm pour libérer la RAM")
+        strategy.initialize_llm()
+    else: 
+        logging.info("Pas d'init du llm pour le premier batch")
+
+    # Génération pour ce batch
+    logging.info("Début de l'inférence ===========")
+    generation_outputs, generation_time_mn = _generate_outputs(strategy, batch_prompts)
+
+    # Sauvegarde des résultats intermédiaires (optionnel mais recommandé)
+    all_generation_outputs.extend(generation_outputs)
+    total_generation_time_mn += generation_time_mn
+
+    # Libération mémoire pour éviter la montée continue de RAM
+    logging.info("Cleaning du LLM")
+    strategy.cleanup_llm()
+    del batch_prompts
+    del generation_outputs
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+logging.info(f"✅ Génération terminée pour {len(prompts)} prompts.")
+logging.info(f"⏱ Temps total de génération : {total_generation_time_mn:.2f} minutes")
+
+
+
+
+
 
 
 async def run_encode(
@@ -29,81 +150,118 @@ async def run_encode(
     prompts_from_file: bool,
     prompt_name: str,
     prompt_label: str,
+    top_k: int,
+    only_annotated: bool,
     sample_size: int = None,
+    save_prompts: bool = False,
 ):
-    logging.info("Define strategy ==========================")
-    strategy = strategy_cls(
-        generation_model=llm_name,
-        prompt_name=prompt_name,
-        prompt_label=prompt_label,
-        collection_name=collection_name,
-    )
-    logging.info("Use get_ambiguous_data ==========================")
-    data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
-    if sample_size is not None:
-        data = data.head(n=sample_size)
-        data = data.reset_index(drop=True)
-
-    data_length = len(data)
-    logging.info(f"Must proceed {data_length} prompts")
-
-    logging.info("Get prompts (retrieval) ==========================")
-
-    start_time = time.time()
-    # async def main():
-    #     prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
-    #     return prompts
-    # prompts = asyncio.run(main())
-    prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
-    retrieval_time_mn = (time.time() - start_time) / 60
-    print(f"Total time for retrieval: {retrieval_time_mn}")
-    print(f"Nb of prompts: {len(prompts)}")
-
-    logging.info("Prompts retrieved !!! ==========================")
+    """Main workflow to run encoding strategy, generate prompts, call LLM, evaluate, and log with MLflow."""
 
     mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
     mlflow.set_experiment(experiment_name)
+
     with mlflow.start_run(run_name=run_name):
-        outputs = strategy.call_llm(prompts, strategy.sampling_params)
+        strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
+        data = _load_data(strategy, third, only_annotated, sample_size)
+        # prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
+        prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts)
 
-        start_time = time.time()
-        processed_outputs = strategy.process_outputs(outputs)
-        generation_time_mn = time.time() - start_time
-        print(f"Generating time: {generation_time_mn} ===================")
+        generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts)
+        results = _process_and_merge(strategy, data, generation_outputs)
+        print(results)
+        metrics, df_eval = _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn, strategy)
+        _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k)
 
-        results = data.merge(processed_outputs, left_index=True, right_index=True)
 
-        output_path = strategy.save_results(results, third)
+def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
+    logging.info("Initializing strategy ==========================")
 
-        metrics, df_eval = Evaluator().evaluate(results, prompts)
-        metrics["num_coded"] = results["codable"].sum()
-        metrics["num_not_coded"] = len(results) - results["codable"].sum()
-        metrics["pct_not_coded"] = round((len(results) - results["codable"].sum()) / len(results) * 100, 2)
-        metrics["retrieval_time_mn"] = round(retrieval_time_mn, 1)
-        metrics["generation_time_mn"] = round(generation_time_mn, 1)
+    kwargs = {
+        "generation_model": llm_name,
+        "prompt_name": prompt_name,
+        "prompt_label": prompt_label,
+    }
 
-        # Log MLflow parameters and metrics
-        mlflow.log_params(
-            {
-                "LLM_MODEL": llm_name,
-                "TEMPERATURE": strategy.sampling_params.temperature,
-                "input_path": URL_SIRENE4_EXTRACTION,
-                "output_path": output_path,
-                "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
-                "COLLECTION_NAME": collection_name,
-                "EMBEDDING_MODEL": strategy.db.vector_name,
-            }
-        )
+    if strategy_cls in [RAGStrategy]:
+        kwargs["collection_name"] = collection_name
 
-        for metric, value in metrics.items():
-            mlflow.log_metric(metric, value)
+    return strategy_cls(**kwargs)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            file_path = os.path.join(tmpdir, "df_eval.csv")
-            df_eval.to_csv(file_path, index=False)
-            mlflow.log_artifact(file_path, artifact_path="dataframes")
 
-    print(f"collection_name: {collection_name} ======================")
+def _load_data(strategy, third, only_annotated, sample_size=None):
+    logging.info("Loading ambiguous data ==========================")
+    data = get_ambiguous_data(strategy.mapping, third, only_annotated)
+    if sample_size is not None:
+        data = data.head(n=sample_size).reset_index(drop=True)
+    return data
+
+
+async def _retrieve_prompts(strategy, data, top_k, load_from_file=False, save_prompts=False):
+    logging.info("Retrieving prompts ==========================")
+    start_time = time.time()
+    prompts = await strategy.get_prompts(
+        data,
+        load_prompts_from_file=load_from_file,
+        top_k=top_k,
+        save=save_prompts
+    )
+    retrieval_time_mn = (time.time() - start_time) / 60
+    logging.info("Prompts retrieved")
+    return prompts, retrieval_time_mn
+
+
+def _generate_outputs(strategy, prompts):
+    logging.info("Starting generation ==========================")
+    start_time = time.time()
+    outputs = strategy.call_llm(prompts, strategy.sampling_params)
+    generation_time_mn = (time.time() - start_time) / 60
+    return outputs, generation_time_mn
+
+
+def _process_and_merge(strategy, data, outputs):
+    processed_outputs = strategy.process_outputs(outputs)
+    return data.merge(processed_outputs, left_index=True, right_index=True)
+
+
+def _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn, strategy):
+    metrics, df_eval = Evaluator().evaluate(results, prompts)
+    metrics.update(
+        {
+            "num_coded": results["codable"].sum(),
+            "num_not_coded": len(results) - results["codable"].sum(),
+            "pct_not_coded": round((len(results) - results["codable"].sum()) / len(results) * 100, 2),
+            "retrieval_time_mn": round(retrieval_time_mn, 1),
+            "generation_time_mn": round(generation_time_mn, 1),
+        }
+    )
+    return metrics, df_eval
+
+
+def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k):
+    output_path = strategy.save_results(results, third=None)
+    params = {
+        "LLM_MODEL": llm_name,
+        "TEMPERATURE": strategy.sampling_params.temperature,
+        "input_path": URL_SIRENE4_EXTRACTION,
+        "output_path": output_path,
+        "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
+        "top_k": top_k,
+        "URL_SIRENE4_EXTRACTION": URL_SIRENE4_EXTRACTION,
+    }
+
+    # If RAG
+    if hasattr(strategy, "db"):
+        params["COLLECTION_NAME"] = collection_name
+        params["EMBEDDING_MODEL"] = getattr(strategy.db, "vector_name", None)
+
+    mlflow.log_params(params)
+    for metric, value in metrics.items():
+        mlflow.log_metric(metric, value)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = os.path.join(tmpdir, "df_eval.csv")
+        df_eval.to_csv(file_path, index=False)
+        mlflow.log_artifact(file_path, artifact_path="dataframes")
 
 
 if __name__ == "__main__":
@@ -113,38 +271,65 @@ if __name__ == "__main__":
     parser.add_argument("--strategy", choices=["rag", "cag"], required=True)
     parser.add_argument("--experiment_name", type=str, default="Test")
     parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument("--collection_name", type=str, default="embeddings_qwen")
+    parser.add_argument("--collection_name", type=str, default=None)
     parser.add_argument("--llm_name", type=str, default="Qwen/Qwen3-0.6B")
     parser.add_argument("--third", type=int, default=None)
     parser.add_argument("--prompts_from_file", action="store_true")
-    parser.add_argument("--prompt_name", type=str, default="rag-classifier")
+    parser.add_argument("--save_prompts", action="store_true")
+    parser.add_argument("--prompt_name", type=str, default=None)
     parser.add_argument("--prompt_label", type=str, default="production")
+    parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--sample_size", type=int, default=None)
+    parser.add_argument(
+        "--only_annotated",
+        type=str,
+        choices=["true", "false"],
+        default="false",
+    )
 
     args = parser.parse_args()
-
+    
     # args_list = [
     #     "--strategy",
-    #     "rag",
+    #     "cag",
     #     "--experiment_name",
     #     "NACE2025_DATASET",
-    #     "--collection_name",
-    #     "embeddings_qwen",
     #     "--llm_name",
-    #     "Qwen/Qwen3-0.6B",
-    #     "--third",
-    #     "1",
+    #     "Qwen/Qwen3-32B",
     #     "--sample_size",
-    #     "15",
+    #     "1000",
+    #     "--only_annotated",
+    #     "false"
     # ]
     # args = parser.parse_args(args_list)
 
+
+
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
-    # assert "COLLECTION_NAME" in os.environ, "Set COLLECTION_NAME"
+
+    if args.only_annotated == "true":
+        args.only_annotated = True
+    else:
+        args.only_annotated = False
+
+    if args.strategy == "cag":
+        args.prompt_name = "cag-classifier"
+    else:
+        args.prompt_name = "rag-classifier"
+
+    print("Arguments used :")
+    for arg, value in vars(args).items():
+        print(f"  {arg}: {value}")
+
+    # Logging of parameters
+    logging.info("===== Run parameters =====")
+    for key, value in vars(args).items():
+        logging.info(f"{key}: {value}")
+    logging.info("==========================")
 
     STRATEGY_MAP = {
-        "rag": RAGStrategy,
         "cag": CAGStrategy,
+        "rag": RAGStrategy,
     }
 
     asyncio.run(
@@ -159,21 +344,23 @@ if __name__ == "__main__":
             prompt_name=args.prompt_name,
             prompt_label=args.prompt_label,
             sample_size=args.sample_size,
+            top_k=args.top_k,
+            save_prompts=args.save_prompts,
+            only_annotated=args.only_annotated,
         )
     )
 
-    # strategy_cls = STRATEGY_MAP[args.strategy]
-    # experiment_name = args.experiment_name
-    # run_name = args.run_name
-    # llm_name = args.llm_name
-    # third = args.third
-    # prompts_from_file = args.prompts_from_file
-    # collection_name=args.collection_name
-    # prompt_name=args.prompt_name
-    # prompt_label=args.prompt_label
-    # sample_size=args.sample_size
 
-    # async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
-    #     tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
-    #     prompts = await tqdm.gather(*tasks)
-    #     return prompts
+# strategy_cls=STRATEGY_MAP[args.strategy]
+# experiment_name=args.experiment_name
+# run_name=args.run_name
+# collection_name=args.collection_name
+# llm_name=args.llm_name
+# third=args.third
+# prompts_from_file=args.prompts_from_file
+# prompt_name=args.prompt_name
+# prompt_label=args.prompt_label
+# sample_size=args.sample_size
+# top_k=args.top_k
+# save_prompts=args.save_prompts
+# only_annotated=args.only_annotated

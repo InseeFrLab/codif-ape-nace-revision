@@ -6,6 +6,8 @@ os.chdir('./codif-ape-nace-revision/src')
 import time
 
 import mlflow
+import gc
+import torch
 
 import config
 from constants.paths import URL_SIRENE4_EXTRACTION
@@ -26,7 +28,7 @@ strategy_cls=STRATEGY_MAP["cag"]
 experiment_name = "Test"
 run_name = None
 collection_name=None
-llm_name="Qwen/Qwen3-0.6B"
+llm_name="Qwen/Qwen3-32B"
 third=None
 prompts_from_file=False
 save_prompts=False
@@ -52,7 +54,7 @@ def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, coll
 
 
 def _load_data(strategy, third, only_annotated, sample_size=None):
-    logging.info("Loading ambiguous data ==========================")
+    logging.info("Loading ambiguous data ")
     data = get_ambiguous_data(strategy.mapping, third, only_annotated)
     if sample_size is not None:
         data = data.head(n=sample_size).reset_index(drop=True)
@@ -79,16 +81,37 @@ def _generate_outputs(strategy, prompts):
     generation_time_mn = (time.time() - start_time) / 60
     return outputs, generation_time_mn
 
+logging.info("Initialisation de la strategie =======")
 strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
-data = _load_data(strategy, third, only_annotated, sample_size = 30000)
+
+logging.info("Import des données =======")
+data = _load_data(strategy, third, only_annotated, sample_size=100000)
 data.shape
 
+logging.info("Création de tous les prompts =======")
 prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
-len(prompts)
+
+logging.info(f"Nombre total de prompts: {len(prompts)} =======")
+
+
+# messages = [
+#     {"role": "system", "content": "Tu es un assistant utile."},
+#     {"role": "user", "content": "Quelle est la capitale de la France ?"}
+# ]
+
+# # Conversion en prompt texte avec le template du modèle
+# prompt_text = strategy.tokenizer.apply_chat_template(
+#     messages,
+#     tokenize=False,  # Important : retourne du texte, pas des tokens
+#     add_generation_prompt=True  # Ajoute le prompt de génération (ex: "Assistant:")
+# )
+
+
 #prompts = prompts[:20000]
 
 # Paramètre de batching
-BATCH_SIZE = 10000
+BATCH_SIZE = 20000
+logging.info(f"Taille des batches: {BATCH_SIZE}")
 
 all_generation_outputs = []
 total_generation_time_mn = 0.0
@@ -96,11 +119,17 @@ total_generation_time_mn = 0.0
 # Boucle sur les batchs
 for i in range(0, len(prompts), BATCH_SIZE):
     batch_prompts = prompts[i:i + BATCH_SIZE]
-    print(f"🚀 Traitement du batch {i // BATCH_SIZE + 1} / {len(prompts) // BATCH_SIZE + 1} "
+    logging.info(f"🚀 Traitement du batch {i // BATCH_SIZE + 1} / {len(prompts) // BATCH_SIZE + 1} "
           f"({len(batch_prompts)} prompts)")
 
-    strategy.initialize_llm()
+    if i > 0:
+        logging.info("Init du llm pour libérer la RAM")
+        strategy.initialize_llm()
+    else: 
+        logging.info("Pas d'init du llm pour le premier batch")
+
     # Génération pour ce batch
+    logging.info("Début de l'inférence ===========")
     generation_outputs, generation_time_mn = _generate_outputs(strategy, batch_prompts)
 
     # Sauvegarde des résultats intermédiaires (optionnel mais recommandé)
@@ -108,37 +137,16 @@ for i in range(0, len(prompts), BATCH_SIZE):
     total_generation_time_mn += generation_time_mn
 
     # Libération mémoire pour éviter la montée continue de RAM
+    logging.info("Cleaning du LLM")
     strategy.cleanup_llm()
     del batch_prompts
     del generation_outputs
-    import gc, torch
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-print(f"✅ Génération terminée pour {len(prompts)} prompts.")
-print(f"⏱ Temps total de génération : {total_generation_time_mn:.2f} minutes")
-
-
-len(all_generation_outputs)
-type(all_generation_outputs)
-type(all_generation_outputs[0])
-sys.getsizeof(all_generation_outputs) * 700
-
-
-prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
-batch_prompts = prompts[0:10000]
-len(batch_prompts)
-generation_outputs, generation_time_mn = _generate_outputs(strategy, batch_prompts)
-
-
-
-
-# prompts[0][1].keys()
-# prompts[0][1]["content"].keys()
-# type(prompts[0][1]["content"])
-
-
+logging.info(f"✅ Génération terminée pour {len(prompts)} prompts.")
+logging.info(f"⏱ Temps total de génération : {total_generation_time_mn:.2f} minutes")
 
 
 
