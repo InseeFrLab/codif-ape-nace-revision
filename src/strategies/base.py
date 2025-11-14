@@ -33,6 +33,7 @@ class EncodeStrategy(ABC):
         self.generation_model = generation_model
 
         model_args = MODEL_TO_ARGS.get(self.generation_model, {}).copy()
+        model_args["enable_prefix_caching"] = False
 
         # add mistral specific args
         if self.generation_model.startswith("mistralai"):

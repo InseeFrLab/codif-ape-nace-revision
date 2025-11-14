@@ -80,12 +80,12 @@ def _generate_outputs(strategy, prompts):
     return outputs, generation_time_mn
 
 strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
-data = _load_data(strategy, third, only_annotated, sample_size)
+data = _load_data(strategy, third, only_annotated, sample_size = 40000)
 data.shape
 
 prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
 len(prompts)
-prompts = prompts[:20000]
+#prompts = prompts[:20000]
 
 # Paramètre de batching
 BATCH_SIZE = 10000
