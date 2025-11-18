@@ -110,7 +110,7 @@ logging.info(f"Nombre total de prompts: {len(prompts)} =======")
 #prompts = prompts[:20000]
 
 # Paramètre de batching
-BATCH_SIZE = 20000
+BATCH_SIZE = 2048
 logging.info(f"Taille des batches: {BATCH_SIZE}")
 
 all_generation_outputs = []
