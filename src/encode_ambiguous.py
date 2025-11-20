@@ -4,7 +4,8 @@ import os
 import tempfile
 #os.chdir('./codif-ape-nace-revision/src')
 import time
-
+import torch
+import gc
 import mlflow
 
 import config
@@ -16,7 +17,6 @@ from strategies.rag import RAGStrategy
 from utils.data import get_ambiguous_data
 
 config.setup()
-
 
 # STRATEGY_MAP = {
 #     "cag": CAGStrategy,
@@ -83,6 +83,7 @@ async def run_encode(
     top_k: int,
     only_annotated: bool,
     sample_size: int = None,
+    batch_size: int = 512,
     save_prompts: bool = False,
 ):
     """Main workflow to run encoding strategy, generate prompts, call LLM, evaluate, and log with MLflow."""
@@ -96,9 +97,8 @@ async def run_encode(
         # prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
         prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts)
 
-        generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts)
+        generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts, batch_size)
         results = _process_and_merge(strategy, data, generation_outputs)
-        print(results)
         metrics, df_eval = _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn, strategy)
         _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k)
 
@@ -140,12 +140,41 @@ async def _retrieve_prompts(strategy, data, top_k, load_from_file=False, save_pr
     return prompts, retrieval_time_mn
 
 
-def _generate_outputs(strategy, prompts):
-    logging.info("Starting generation ==========================")
+# def _generate_outputs(strategy, prompts):
+#     logging.info("Starting generation ==========================")
+#     start_time = time.time()
+#     outputs = strategy.call_llm(prompts, strategy.sampling_params)
+#     generation_time_mn = (time.time() - start_time) / 60
+#     return outputs, generation_time_mn
+
+
+def _generate_outputs(strategy, prompts, BATCH_SIZE=None):
+
+    logging.info("Starting generation ======")
     start_time = time.time()
-    outputs = strategy.call_llm(prompts, strategy.sampling_params)
+    logging.info(f"Taille des batches: {BATCH_SIZE}")
+
+    all_generation_outputs = []
+    total_generation_time_mn = 0.0
+
+    # Boucle sur les batchs
+    for i in range(0, len(prompts), BATCH_SIZE):
+        batch_prompts = prompts[i:i + BATCH_SIZE]
+        logging.info(f"🚀 Traitement du batch {i // BATCH_SIZE + 1} / {len(prompts) // BATCH_SIZE + 1} ==== ")
+        batch_outputs = strategy.call_llm(batch_prompts, strategy.sampling_params)
+        all_generation_outputs.extend(batch_outputs)
+
+        # RAM free
+        del batch_prompts
+        del batch_outputs
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     generation_time_mn = (time.time() - start_time) / 60
-    return outputs, generation_time_mn
+    logging.info(f"✅ Génération terminée pour {len(prompts)} prompts.")
+    logging.info(f"⏱ Temps total de génération : {total_generation_time_mn:.2f} minutes")
+    return all_generation_outputs, generation_time_mn
 
 
 def _process_and_merge(strategy, data, outputs):
@@ -216,6 +245,7 @@ if __name__ == "__main__":
         choices=["true", "false"],
         default="false",
     )
+    parser.add_argument("--batch_size", type=int, default=512)
 
     args = parser.parse_args()
     
@@ -277,6 +307,7 @@ if __name__ == "__main__":
             top_k=args.top_k,
             save_prompts=args.save_prompts,
             only_annotated=args.only_annotated,
+            batch_size=args.batch_size,
         )
     )
 

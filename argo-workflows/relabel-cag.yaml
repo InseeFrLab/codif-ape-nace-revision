@@ -73,11 +73,7 @@ spec:
             uv run huggingface-cli download {{inputs.parameters.LLM_NAME}}
             
             CMD="uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}} --sample_size 1000"
-            
-            if [[ "{{inputs.parameters.only_annotated}}" == "false" ]]; then
-              CMD="$CMD --only_annotated False"
-            fi
-            
+
             echo "Executing: $CMD"
             eval $CMD
         volumeMounts:
