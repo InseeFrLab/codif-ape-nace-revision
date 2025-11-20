@@ -35,10 +35,67 @@ prompts = df_to_prompts(prompts_df)
 logging.info(f"Nombre total de prompts: {len(prompts)} =======")
 
 
+# from transformers import AutoTokenizer
+
+# def count_chat_tokens(messages: list, model_name: str = "Qwen/Qwen2.5-32B") -> int:
+#     """
+#     Compte les tokens pour un format chat (comme avec vllm.chat()).
+    
+#     Args:
+#         messages: Liste de dicts [{"role": "user", "content": "..."}]
+#         model_name: Nom du modèle
+    
+#     Returns:
+#         Nombre total de tokens
+#     """
+#     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    
+#     # Appliquer le template de chat
+#     formatted_prompt = tokenizer.apply_chat_template(
+#         messages,
+#         tokenize=False,
+#         add_generation_prompt=True
+#     )
+    
+#     # Compter les tokens
+#     tokens = tokenizer.encode(formatted_prompt)
+    
+#     print(f"Prompt formaté:\n{formatted_prompt}\n")
+#     print(f"Nombre de tokens: {len(tokens)}")
+    
+#     return len(tokens)
+
+# # Exemple
+# messages = [
+#     {"role": "system", "content": "Tu es un assistant utile."},
+#     {"role": "user", "content": "Quelle est la capitale de la France ?"}
+# ]
+
+# max_token = 0
+# for p in prompts[:100]:
+#     len_temp = count_chat_tokens(p)
+#     if max_token < len_temp:
+#         max_token = len_temp
+# print(max_token)
+
+# max_token = 0
+# index = 0
+# for i, p in enumerate(prompts):
+#     len_temp = len(p[1]["content"])
+#     if max_token < len_temp:
+#         max_token = len_temp
+#         index = i
+# print(max_token)
+# print(index)
+
+# prompts[19548][1]["content"]
+
+# count_chat_tokens(prompts[19548])
+
 logging.info("Initialisation du LLM =======")
 
 model_args = {
-    'max_model_len': 25000, 
+    'max_model_len': 12000, 
     'gpu_memory_utilization': 0.95, 
     'enable_prefix_caching': False
 }
@@ -72,12 +129,12 @@ for i in range(0, len(prompts), BATCH_SIZE):
     logging.info(f"🚀 Traitement du batch {i // BATCH_SIZE + 1} / {len(prompts) // BATCH_SIZE + 1} "
           f"({len(batch_prompts)} prompts)")
 
-    outputs = llm.chat(prompts, sampling_params=sampling_params)
+    outputs = llm.chat(batch_prompts, sampling_params=sampling_params)
 
     all_generation_outputs.extend(outputs)
 
     # Libération mémoire pour éviter la montée continue de RAM
-    logging.info("Cleaning du LLM")
+    logging.info("Cleaning mémoire =======")
     del batch_prompts
     del outputs
     gc.collect()
