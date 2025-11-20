@@ -62,7 +62,30 @@ sampling_params = SamplingParams(
 
 logging.info("Génération =======")
 
-outputs = llm.chat(prompts[:10], sampling_params=sampling_params)
+BATCH_SIZE = 256
+logging.info(f"Taille des batches: {BATCH_SIZE}")
+
+all_generation_outputs = []
+
+for i in range(0, len(prompts), BATCH_SIZE):
+    batch_prompts = prompts[i:i + BATCH_SIZE]
+    logging.info(f"🚀 Traitement du batch {i // BATCH_SIZE + 1} / {len(prompts) // BATCH_SIZE + 1} "
+          f"({len(batch_prompts)} prompts)")
+
+    outputs = llm.chat(prompts, sampling_params=sampling_params)
+
+    all_generation_outputs.extend(outputs)
+
+    # Libération mémoire pour éviter la montée continue de RAM
+    logging.info("Cleaning du LLM")
+    del batch_prompts
+    del outputs
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+
 
 
 
