@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  name: run-relabel-naf08-to-naf25
+  name: run-relabel-cag
 spec:
   serviceAccountName: workflow
   volumes:
@@ -72,7 +72,7 @@ spec:
             # uv run huggingface-cli login --token $HF_TOKEN
             # uv run huggingface-cli download {{inputs.parameters.LLM_NAME}}
             
-            CMD="uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}} --sample_size 600"
+            CMD="uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}}"
 
             echo "Executing: $CMD"
             eval $CMD
