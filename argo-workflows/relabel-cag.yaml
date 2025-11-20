@@ -22,7 +22,7 @@ spec:
   templates:
     - name: main
       dag:
-        parallelism: 2
+        parallelism: 3
         tasks:
           - name: relabel-naf08-to-naf25
             template: run-relabel
@@ -57,11 +57,11 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1
-            cpu: 15000m
-            memory: 152Gi
+            cpu: 30000m
+            memory: 200Gi
           requests:
-            cpu: 100m
-            memory: 58Gi
+            cpu: 11000m
+            memory: 100Gi
         command: ["/bin/bash", -c]
         args:
           - |
@@ -69,10 +69,10 @@ spec:
             cd codif-ape-nace-revision/
             git checkout doc-jp
             uv sync
-            uv run huggingface-cli login --token $HF_TOKEN
-            uv run huggingface-cli download {{inputs.parameters.LLM_NAME}}
+            # uv run huggingface-cli login --token $HF_TOKEN
+            # uv run huggingface-cli download {{inputs.parameters.LLM_NAME}}
             
-            CMD="uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}} --sample_size 1000"
+            CMD="uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}} --sample_size 600"
 
             echo "Executing: $CMD"
             eval $CMD
