@@ -274,6 +274,7 @@ if __name__ == "__main__":
 
     if args.strategy == "cag":
         args.prompt_name = "cag-classifier"
+        args.top_k = None
     else:
         args.prompt_name = "rag-classifier"
 
