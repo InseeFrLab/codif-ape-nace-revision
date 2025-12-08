@@ -1,6 +1,59 @@
 from collections import Counter
-
 import pandas as pd
+from typing import Dict, List
+
+def calculate_accuracy(
+    predictions: pd.Series, 
+    ground_truth: pd.Series, 
+    level: int
+) -> float:
+    """Calculate accuracy at a given precision level."""
+    return round(
+        (ground_truth.str[:level] == predictions.str[:level]).mean() * 100, 
+        2
+    )
+
+def generate_model_names(base_models: List[str], ensemble_methods: List[str], include_ensemble: bool = True) -> List[str]:
+    """Generate model names with the nace2025 prefix."""
+    models = [f"nace2025_{model}" for model in base_models]
+    if include_ensemble:
+        models.extend([f"nace2025_{method}" for method in ensemble_methods])
+    return models
+
+def compute_accuracies(
+    eval_df: pd.DataFrame,
+    models: List[str],
+    levels: List[int],
+    filter_condition: pd.Series = None,
+    model_prefix: str = ""
+) -> Dict[str, float]:
+    """
+    Calculate accuracies for multiple models and levels.
+    
+    Args:
+        eval_df: Evaluation DataFrame
+        models: List of model names
+        levels: List of levels to evaluate
+        filter_condition: Optional filter condition (boolean mask)
+        model_prefix: Prefix to add to the model name in the column
+    """
+    df_filtered = eval_df[filter_condition] if filter_condition is not None else eval_df
+    
+    accuracies = {}
+    for model in models:
+        model_col = f"{model_prefix}{model}" if model_prefix else model
+        clean_name = model.replace('nace2025_', '')
+        
+        for level in levels:
+            key = f"accuracy_{clean_name}_lvl_{level}"
+            accuracies[key] = calculate_accuracy(
+                predictions=df_filtered[model_col],
+                ground_truth=df_filtered["apet_manual"],
+                level=level
+            )
+    
+    return accuracies
+
 
 
 def select_labels_cascade(df: pd.DataFrame, model_columns: list, default_value=None) -> pd.Series:
