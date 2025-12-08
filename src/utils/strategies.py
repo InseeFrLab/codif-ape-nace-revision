@@ -30,6 +30,28 @@ def select_labels_cascade(df: pd.DataFrame, model_columns: list, default_value=N
 
     return df.apply(cascade_select, axis=1)
 
+# Reproducible example
+if __name__ == "__main__":
+    import pandas as pd
+
+    # Create sample data
+    data = {
+        "model1": ["A", None, "B", None, None],
+        "model2": ["A", "B", None, "C", None],
+        "model3": ["B", "B", "C", None, None]
+    }
+    df = pd.DataFrame(data)
+
+    # Test cascade selection
+    model_columns = ["model1", "model2", "model3"]
+    result = select_labels_cascade(df, model_columns, default_value="DEFAULT")
+
+    # Print results
+    print("Original DataFrame:")
+    print(df)
+    print("\nCascade Selection Results:")
+    print(result)
+
 
 def select_labels_voting(df: pd.DataFrame, model_columns: list, default_value=None) -> pd.Series:
     """
