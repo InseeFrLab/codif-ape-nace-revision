@@ -6,7 +6,6 @@ import duckdb
 import pandas as pd
 import s3fs
 
-from constants.data import VAR_TO_KEEP
 from constants.paths import (
     URL_EXPLANATORY_NOTES,
     URL_GROUND_TRUTH,
@@ -64,7 +63,7 @@ def get_file_system(token=None) -> s3fs.S3FileSystem:
     return s3fs.S3FileSystem(**options)
 
 
-def merge_dataframes(df_dict: dict, merge_on, columns_to_rename=None, how="inner"):
+def merge_dataframes(df_dict: dict, merge_on, var_to_keep, columns_to_rename=None, how="inner"):
     """
     Merge a dictionary of pandas DataFrames.
 
@@ -94,7 +93,7 @@ def merge_dataframes(df_dict: dict, merge_on, columns_to_rename=None, how="inner
     # Process each DataFrame: select columns and rename as needed
     for key, df in df_dict.items():
         # Select columns to keep
-        temp_df = df[VAR_TO_KEEP].copy()
+        temp_df = df[var_to_keep].copy()
 
         # Rename columns if specified
         if columns_to_rename:
