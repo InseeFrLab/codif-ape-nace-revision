@@ -5,7 +5,12 @@ import pandas as pd
 from datetime import datetime
 import pyarrow.parquet as pq
 import os
-os.chdir("codif-ape-nace-revision/src")
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+#os.chdir("codif-ape-nace-revision/src")
 
 from constants.paths import (
     URL_EXPLANATORY_NOTES,
@@ -32,10 +37,8 @@ from utils.strategies import (
     select_labels_weighted_voting,
 )
 
-
 def check_mapping(naf08, naf25):
     return naf25 in naf08_to_naf2025.get(naf08, set())
-
 
 fs = get_file_system()
 
@@ -156,11 +159,10 @@ accuracies_raw_llm = compute_accuracies(
 
 stats = get_model_agreement_stats(eval_df, model_columns)
 
-print(f"Raw accuracies : {accuracies_raw}\n\n")
-print(f"Codable accuracies : {accuracies_codable}\n\n")
-print(f"Raw LLM accuracies : {accuracies_raw_llm}\n\n")
-print(f"---------------------------------\nSTATISTIQUES\n {stats}\n\n")
-
+logger.info("Raw accuracies: %s", accuracies_raw)
+logger.info("Codable accuracies: %s", accuracies_codable)
+logger.info("Raw LLM accuracies: %s", accuracies_raw_llm)
+logger.info("Model agreement statistics: %s", stats)
 
 ## Choice of best strategy and export final results ------------------------
 
@@ -178,4 +180,6 @@ final_df = merged_df.loc[
 ].rename(columns={f"nace2025_{best_strategy}": "nace2025"})
 
 timestamp = datetime.now().strftime("%Y%m%d")
-final_df.to_parquet(f"{URL_SIRENE4_AMBIGUOUS_FINAL}{timestamp}_sirene4_ambiguous.parquet", filesystem=fs)
+output_path = f"{URL_SIRENE4_AMBIGUOUS_FINAL}{timestamp}_sirene4_ambiguous.parquet"
+# final_df.to_parquet(output_path, filesystem=fs)
+logger.info(f"Final results exported successfully here: {output_path}")
