@@ -132,11 +132,16 @@ def load_data_from_s3(query: str) -> pd.DataFrame:
     """Load data from S3 using DuckDB."""
     with duckdb.connect(database=":memory:") as con:
         try:
+            con.execute("INSTALL httpfs; LOAD httpfs")
             con.execute(f"""
-                SET s3_endpoint='{os.getenv("AWS_S3_ENDPOINT")}';
-                SET s3_access_key_id='{os.getenv("AWS_ACCESS_KEY_ID")}';
-                SET s3_secret_access_key='{os.getenv("AWS_SECRET_ACCESS_KEY")}';
-                SET s3_session_token='';
+                CREATE OR REPLACE SECRET s3_secret (
+                    TYPE S3,
+                    KEY_ID '{os.getenv("AWS_ACCESS_KEY_ID")}',
+                    SECRET '{os.getenv("AWS_SECRET_ACCESS_KEY")}',
+                    ENDPOINT '{os.getenv("AWS_S3_ENDPOINT")}',
+                    USE_SSL true,
+                    URL_STYLE 'path'
+                )
             """)
             result_df = con.execute(query).fetch_df()
             return result_df
