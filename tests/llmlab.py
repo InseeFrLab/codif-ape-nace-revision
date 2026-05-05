@@ -44,52 +44,24 @@ def test_list_models(client: OpenAI) -> list[str]:
     return ids
 
 
-# def test_completion(client: OpenAI, model: str) -> str:
-#     """Vérifie qu'une requête simple aboutit."""
-#     response = client.chat.completions.create(
-#         model=model,
-#         messages=[{"role": "user", "content": "Réponds uniquement avec le mot 'ok'."}],
-#         max_tokens=10,
-#         temperature=0,
-#     )
-#     content = response.choices[0].message.content
-#     assert content, "Réponse vide"
-#     print(f"[OK] Complétion simple : {content!r}")
-#     return content
 
-
-# def test_json_schema(client: OpenAI, model: str) -> ReponseFormat:
-#     """Vérifie que le serveur respecte un json_schema Pydantic."""
-#     response = client.chat.completions.create(
-#         model=model,
-#         messages=[
-#             {
-#                 "role": "user",
-#                 "content": (
-#                     "Produit : lait entier bio 1L. "
-#                     "Peux-tu lui attribuer un code COICOP ? "
-#                     "Réponds en JSON."
-#                 ),
-#             }
-#         ],
-#         max_tokens=256,
-#         temperature=0,
-#         response_format={
-#             "type": "json_schema",
-#             "json_schema": {
-#                 "name": "ReponseFormat",
-#                 "schema": ReponseFormat.model_json_schema(),
-#                 "strict": True,
-#             },
-#         },
-#     )
-#     raw = response.choices[0].message.content
-#     parsed = ReponseFormat.model_validate_json(raw)
-#     print(f"[OK] json_schema — codable={parsed.codable}, code={parsed.code_predict!r}, confidence={parsed.confidence:.2f}")
-#     return parsed
-
+def test_embedding(client: OpenAI, model: str = "qwen3-embedding-8b") -> None:
+    """Checks that the embedding model returns valid vectors for a few sample texts."""
+    texts = [
+        "Boulangerie artisanale spécialisée dans le pain au levain.",
+        "Développement de logiciels de gestion pour les PME.",
+        "Transport routier de marchandises à longue distance.",
+    ]
+    response = client.embeddings.create(model=model, input=texts)
+    assert len(response.data) == len(texts), "Nombre d'embeddings incorrect"
+    for i, embedding_obj in enumerate(response.data):
+        vec = embedding_obj.embedding
+        assert isinstance(vec, list) and len(vec) > 0, f"Embedding {i} vide ou invalide"
+    dim = len(response.data[0].embedding)
+    print(f"[OK] Embeddings {model} — {len(texts)} vecteurs de dimension {dim}")
 
 
 if __name__ == "__main__":
     client = make_client()
     print(test_list_models(client))
+    test_embedding(client, model="gwen3-embedding-8b")
