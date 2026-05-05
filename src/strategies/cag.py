@@ -6,14 +6,11 @@ import pandas as pd
 from langfuse import Langfuse
 from pydantic import BaseModel, Field, model_validator
 from tqdm.asyncio import tqdm
-from vllm.sampling_params import GuidedDecodingParams, SamplingParams
 
-from constants.llm import (
-    MAX_NEW_TOKEN,
-    TEMPERATURE,
-)
-from constants.paths import URL_SIRENE4_AMBIGUOUS_CAG, URL_PROMPTS_CAG
+from constants.llm import MAX_NEW_TOKEN, TEMPERATURE
+from constants.paths import URL_PROMPTS_CAG, URL_SIRENE4_AMBIGUOUS_CAG
 from utils.data import get_file_system, prompts_to_df
+
 from .base import EncodeStrategy
 
 logger = logging.getLogger(__name__)
@@ -51,21 +48,18 @@ class CAGResponse(BaseModel):
 class CAGStrategy(EncodeStrategy):
     def __init__(
         self,
-        generation_model: str = "Qwen/Qwen2.5-0.5B",
+        generation_model: str = "gemma4-31b",
         prompt_name: str = "cag-classifier",
         prompt_label: str = "production",
-        reranker_model: str = None,
     ):
         super().__init__(generation_model)
         self.response_format = CAGResponse
         self.prompt_template = Langfuse().get_prompt(prompt_name, label=prompt_label)
-        self.sampling_params = SamplingParams(
-            max_tokens=MAX_NEW_TOKEN,
-            temperature=TEMPERATURE,
-            seed=2025,
-            logprobs=1,
-            guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
-        )
+        self.sampling_params = {
+            "max_tokens": MAX_NEW_TOKEN,
+            "temperature": TEMPERATURE,
+            "seed": 2025,
+        }
         self.prompt_name = prompt_name
         self.prompt_label = prompt_label
 
