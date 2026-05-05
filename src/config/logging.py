@@ -30,4 +30,7 @@ def setup_logging(log_file="encode_ambiguous.log"):
     # Évite que le logger racine duplique les messages si setup_logging est rappelé
     logger.propagate = False
 
+    for noisy_logger in ("botocore", "s3fs", "aiobotocore", "urllib3"):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
     return logger
