@@ -1,10 +1,6 @@
 import logging
 import os
 
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import CrossEncoderReranker
-from langchain_community.cross_encoders import HuggingFaceCrossEncoder
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
@@ -46,22 +42,13 @@ def get_embedding_model_name(client: QdrantClient, collection_name: str) -> str:
 
 
 def get_embedding_model(model_name: str) -> OpenAIEmbeddings:
-    """Initialize the embedding model."""
+    """Initialize the embedding model against the llm.lab OpenAI-compatible API."""
     return OpenAIEmbeddings(
         model=model_name,
-        openai_api_base=os.getenv("URL_EMBEDDING_API"),
-        openai_api_key="PLACEHOLDER",
+        openai_api_base=os.environ["LLMLAB_URL"],
+        openai_api_key=os.environ["LLMLAB_API_KEY"],
         tiktoken_enabled=False,
         embedding_ctx_length=8192,
-        # check_embedding_ctx_length=False,
-    )
-
-
-def get_reranker_model(model_name: str) -> HuggingFaceEmbeddings:
-    """Initialize the HuggingFace reranker model."""
-    return HuggingFaceCrossEncoder(
-        model_name=model_name,
-        model_kwargs={"device": "cuda"},
     )
 
 
@@ -81,16 +68,6 @@ def get_vector_db(collection_name: str) -> QdrantVectorStore:
     )
 
 
-def get_retriever(collection_name: str, reranker_name: str = None):
-    """Initialize the retriever from a vector database and a reranker."""
-    vector_db: QdrantVectorStore = get_vector_db(collection_name)
-    return vector_db
-
-
-# def get_reranker(vector_db: QdrantVectorStore, reranker_name: str, k: int = 35):
-#     reranker: HuggingFaceEmbeddings = get_reranker_model(reranker_name)
-#     compressor = CrossEncoderReranker(model=reranker, top_n=5)
-#     return ContextualCompressionRetriever(
-#         base_compressor=compressor,
-#         base_retriever=vector_db.as_retriever(search_kwargs={"k": k})
-#     )
+def get_retriever(collection_name: str):
+    """Initialize the retriever from a vector database."""
+    return get_vector_db(collection_name)
