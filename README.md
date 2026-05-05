@@ -64,7 +64,7 @@ uv run huggingface-cli download $MODEL_NAME
 To create a searchable database of NACE 2025 codes:
 
 ```bash
-uv run src/build_vector_db.py
+uv run src/1_build_vector_db.py
 ```
 
 ### 🏷 2. Encode Business Activity Codes
@@ -72,13 +72,13 @@ uv run src/build_vector_db.py
 For **unambiguous** classification:
 
 ```bash
-uv run src/encode_unambiguous.py
+uv run src/2_encode_unambiguous.py
 ```
 
 For **ambiguous** classification using an LLM:
 
 ```bash
-uv run src/encode_ambiguous.py --strategy rag --experiment_name NACE2025_DATASET --llm_name Qwen/Qwen3-0.6B --third 1
+uv run src/3_encode_ambiguous.py --strategy rag --experiment_name NACE2025_DATASET --llm_name Qwen/Qwen3-0.6B --third 1
 ```
 
 ### 🔬 3. Evaluate Classification Strategies
@@ -88,7 +88,7 @@ uv run src/encode_ambiguous.py --strategy rag --experiment_name NACE2025_DATASET
 Compare different classification models:
 
 ```bash
-uv run src/evaluate_strategies.py
+uv run src/4_evaluate_strategies.py
 ```
 
 ### 📊 4. Build the NACE 2025 Dataset
@@ -96,7 +96,7 @@ uv run src/evaluate_strategies.py
 Once all unique ambiguous cases have been recoded using the best strategy, you can rebuild the entire dataset with NACE 2025 labels:
 
 ```bash
-uv run src/build_nace2025_sirene4.py
+uv run src/5_build_nace2025_sirene4.py
 ```
 
 ## 📡 LLM Integration

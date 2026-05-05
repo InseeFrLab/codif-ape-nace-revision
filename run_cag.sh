@@ -11,7 +11,7 @@ llm_name="Qwen/Qwen3-0.6B"
 uv run huggingface-cli download "$llm_name"
 
 # on construit un tableau au lieu d’une seule chaîne
-CMD=(uv run src/encode_ambiguous.py --strategy cag --experiment_name Test --llm_name "$llm_name")
+CMD=(uv run src/3_encode_ambiguous.py --strategy cag --experiment_name Test --llm_name "$llm_name")
 
 if [[ "${only_annotated:-false}" == "true" ]]; then
     CMD+=("--only_annotated")
@@ -24,7 +24,7 @@ echo "Executing: ${CMD[*]}"
 # top_k=5
 
 
-# uv run src/encode_ambiguous.py \
+# uv run src/3_encode_ambiguous.py \
 #     --strategy cag \
 #     --llm_name "$llm_name" \
 #     --save_prompts \

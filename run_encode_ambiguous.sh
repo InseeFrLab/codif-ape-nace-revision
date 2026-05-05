@@ -48,7 +48,7 @@ for model in "${models[@]}"; do
       echo "    top_k      : $top_k"
       echo "----------------------------------------------"
 
-      uv run src/encode_ambiguous.py \
+      uv run src/3_encode_ambiguous.py \
           --strategy rag \
           --experiment_name NACE2025_DATASET \
           --collection_name "$collection" \
