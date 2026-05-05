@@ -34,7 +34,7 @@ repos:
 
     ## Vulture
   - repo: https://github.com/jendrikseipp/vulture
-    rev: v2.14
+    rev: v2.16
     hooks:
       - id: vulture
 
