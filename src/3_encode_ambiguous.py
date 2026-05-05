@@ -12,6 +12,7 @@ from evaluation.evaluator import Evaluator
 from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
 from strategies.rag import RAGStrategy
+from constants.data import VAR_TO_KEEP
 from utils.data import get_ambiguous_data
 
 config.setup()
@@ -118,7 +119,7 @@ def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, coll
 
 def _load_data(strategy, third, only_annotated, sample_size=None):
     logging.info("Loading ambiguous data ==========================")
-    data = get_ambiguous_data(strategy.mapping, third, only_annotated)
+    data = get_ambiguous_data(strategy.mapping, third, only_annotated, VAR_TO_KEEP)
     if sample_size is not None:
         data = data.head(n=sample_size).reset_index(drop=True)
     return data

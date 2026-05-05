@@ -14,6 +14,7 @@ from evaluation.evaluator import Evaluator
 from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
 from strategies.rag import RAGStrategy
+from constants.data import VAR_TO_KEEP
 from utils.data import get_ambiguous_data
 
 config.setup()
@@ -39,7 +40,7 @@ async def run_encode(
         collection_name=collection_name,
     )
     logging.info("Use get_ambiguous_data ==========================")
-    data = get_ambiguous_data(strategy.mapping, third, only_annotated=True)
+    data = get_ambiguous_data(strategy.mapping, third, only_annotated=True, var_to_keep=VAR_TO_KEEP)
     if sample_size is not None:
         data = data.head(n=sample_size)
         data = data.reset_index(drop=True)
