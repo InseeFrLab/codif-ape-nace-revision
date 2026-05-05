@@ -1,1 +1,2 @@
 RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
+MAX_CONCURRENCY = 256

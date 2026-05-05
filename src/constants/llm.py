@@ -5,6 +5,7 @@ MODEL_TO_ARGS = {
     "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B": {
         "max_model_len": 25000,
         "gpu_memory_utilization": 0.95,
+        'enable_prefix_caching': False,
     },
     "mistralai/Mistral-Small-3.2-24B-Instruct-2506": {
         "tokenizer_mode": "mistral",
@@ -12,12 +13,22 @@ MODEL_TO_ARGS = {
         "load_format": "mistral",
         "max_model_len": 25000,
         "gpu_memory_utilization": 0.95,
+        'enable_prefix_caching': False,
     },
     "Qwen/Qwen3-32B": {
         "max_model_len": 25000,
         "gpu_memory_utilization": 0.95,
+        'enable_prefix_caching': False,
     },
+    # "Qwen/Qwen3-0.6B": {
+    #     "max_model_len": 10000, 
+    #     "gpu_memory_utilization": 0.05,
+    # },
     "google/gemma-3-27b-it": {
+        "max_model_len": 25000,
+        "gpu_memory_utilization": 0.95,
+    },
+    "openai/gpt-oss-20b": {
         "max_model_len": 25000,
         "gpu_memory_utilization": 0.95,
     },

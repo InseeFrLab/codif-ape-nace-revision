@@ -1,6 +1,59 @@
 from collections import Counter
-
 import pandas as pd
+from typing import Dict, List
+
+def calculate_accuracy(
+    predictions: pd.Series, 
+    ground_truth: pd.Series, 
+    level: int
+) -> float:
+    """Calculate accuracy at a given precision level."""
+    return round(
+        (ground_truth.str[:level] == predictions.str[:level]).mean() * 100, 
+        2
+    )
+
+def generate_model_names(base_models: List[str], ensemble_methods: List[str], include_ensemble: bool = True) -> List[str]:
+    """Generate model names with the nace2025 prefix."""
+    models = [f"nace2025_{model}" for model in base_models]
+    if include_ensemble:
+        models.extend([f"nace2025_{method}" for method in ensemble_methods])
+    return models
+
+def compute_accuracies(
+    eval_df: pd.DataFrame,
+    models: List[str],
+    levels: List[int],
+    filter_condition: pd.Series = None,
+    model_prefix: str = ""
+) -> Dict[str, float]:
+    """
+    Calculate accuracies for multiple models and levels.
+    
+    Args:
+        eval_df: Evaluation DataFrame
+        models: List of model names
+        levels: List of levels to evaluate
+        filter_condition: Optional filter condition (boolean mask)
+        model_prefix: Prefix to add to the model name in the column
+    """
+    df_filtered = eval_df[filter_condition] if filter_condition is not None else eval_df
+    
+    accuracies = {}
+    for model in models:
+        model_col = f"{model_prefix}{model}" if model_prefix else model
+        clean_name = model.replace('nace2025_', '')
+        
+        for level in levels:
+            key = f"accuracy_{clean_name}_lvl_{level}"
+            accuracies[key] = calculate_accuracy(
+                predictions=df_filtered[model_col],
+                ground_truth=df_filtered["apet_manual"],
+                level=level
+            )
+    
+    return accuracies
+
 
 
 def select_labels_cascade(df: pd.DataFrame, model_columns: list, default_value=None) -> pd.Series:
@@ -29,6 +82,28 @@ def select_labels_cascade(df: pd.DataFrame, model_columns: list, default_value=N
         return default_value
 
     return df.apply(cascade_select, axis=1)
+
+# Reproducible example
+if __name__ == "__main__":
+    import pandas as pd
+
+    # Create sample data
+    data = {
+        "model1": ["A", None, "B", None, None],
+        "model2": ["A", "B", None, "C", None],
+        "model3": ["B", "B", "C", None, None]
+    }
+    df = pd.DataFrame(data)
+
+    # Test cascade selection
+    model_columns = ["model1", "model2", "model3"]
+    result = select_labels_cascade(df, model_columns, default_value="DEFAULT")
+
+    # Print results
+    print("Original DataFrame:")
+    print(df)
+    print("\nCascade Selection Results:")
+    print(result)
 
 
 def select_labels_voting(df: pd.DataFrame, model_columns: list, default_value=None) -> pd.Series:
@@ -106,9 +181,7 @@ def select_labels_weighted_voting(
 
     def weighted_vote(row):
         # Get non-None predictions with their weights
-        valid_predictions = {
-            pred: weights[col] for col, pred in row[model_columns].items() if pd.notna(pred)
-        }
+        valid_predictions = {pred: weights[col] for col, pred in row[model_columns].items() if pd.notna(pred)}
 
         if not valid_predictions:
             return default_value
@@ -120,9 +193,7 @@ def select_labels_weighted_voting(
 
         # Get prediction(s) with maximum weighted votes
         max_weight = max(prediction_weights.values())
-        top_predictions = [
-            pred for pred, weight in prediction_weights.items() if weight == max_weight
-        ]
+        top_predictions = [pred for pred, weight in prediction_weights.items() if weight == max_weight]
 
         return top_predictions[0] if len(top_predictions) == 1 else row[model_columns[0]]
 
@@ -147,10 +218,8 @@ def get_model_agreement_stats(df: pd.DataFrame, model_columns: list) -> dict:
         return {
             "valid_predictions": len(predictions),
             "unique_predictions": len(unique_predictions),
-            "full_agreement": len(unique_predictions) == 1
-            and len(predictions) == len(model_columns),
-            "partial_agreement": len(unique_predictions) == 1
-            and len(predictions) < len(model_columns),
+            "full_agreement": len(unique_predictions) == 1 and len(predictions) == len(model_columns),
+            "partial_agreement": len(unique_predictions) == 1 and len(predictions) < len(model_columns),
             "all_different": len(unique_predictions) == len(predictions) and len(predictions) > 1,
             "all_none": len(predictions) == 0,
         }

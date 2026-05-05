@@ -6,7 +6,10 @@ import pandas as pd
 from .models import NAF2008, NAF2025
 
 
-def format_mapping_table(mapping_table: str) -> str:
+def format_mapping_table(mapping_table: pd.DataFrame) -> pd.DataFrame:
+    """
+    Select and rename columns from the mapping table
+    """
     columns_mapping = {
         "NAFold-code\n(code niveau sous-classe de la nomenclature actuelle)": "naf08_niv5",
         "NACEold-code\n(niveau classe)": "naf08_niv4",
@@ -16,17 +19,7 @@ def format_mapping_table(mapping_table: str) -> str:
         "NAFnew-intitulé\n(niveau sous-classe)": "lib_naf25_niv5",
     }
 
-    return (
-        mapping_table.iloc[:, [1, 3, 2, 10, 5, 11]]
-        .rename(columns=columns_mapping)
-        .assign(
-            naf08_niv5=mapping_table.iloc[:, 1],
-            naf08_niv4=mapping_table.iloc[:, 3],
-            naf25_niv4=mapping_table.iloc[:, 5],
-            naf25_niv5=mapping_table.iloc[:, 10],
-        )
-        .copy()
-    )
+    return mapping_table.iloc[:, [1, 3, 2, 10, 5, 11]].rename(columns=columns_mapping).copy()
 
 
 def format_explanatory_notes(explanatory_notes: str) -> str:
@@ -125,7 +118,7 @@ def get_explanatory_notes(explanatory_notes: pd.DataFrame, code25: str, note_typ
         return "\n".join(extracted_values) if note_type == "include" else extracted_values[0]
 
 
-def get_mapping(explanatory_notes: pd.DataFrame, mapping_table: pd.DataFrame) -> list:
+def get_mapping(explanatory_notes: pd.DataFrame, mapping_table: pd.DataFrame) -> list[NAF2008]:
     """
     Generates a mapping of NAF 2008 codes to NAF 2025 codes with explanatory notes.
     """
@@ -149,7 +142,7 @@ def get_mapping(explanatory_notes: pd.DataFrame, mapping_table: pd.DataFrame) ->
     ]
 
 
-def get_nace2025_from_mapping(mapping):
+def get_nace2025_from_mapping(mapping: List[NAF2008]) -> List[NAF2025]:
     """Generate unique NAF2025 codes from the mapping."""
     unique_codes = {}
     for code08 in mapping:

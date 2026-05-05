@@ -6,7 +6,6 @@ import duckdb
 import pandas as pd
 import s3fs
 
-from constants.data import VAR_TO_KEEP
 from constants.paths import (
     URL_EXPLANATORY_NOTES,
     URL_GROUND_TRUTH,
@@ -64,7 +63,7 @@ def get_file_system(token=None) -> s3fs.S3FileSystem:
     return s3fs.S3FileSystem(**options)
 
 
-def merge_dataframes(df_dict: dict, merge_on, columns_to_rename=None, how="inner"):
+def merge_dataframes(df_dict: dict, merge_on, var_to_keep, columns_to_rename=None, how="inner"):
     """
     Merge a dictionary of pandas DataFrames.
 
@@ -94,7 +93,7 @@ def merge_dataframes(df_dict: dict, merge_on, columns_to_rename=None, how="inner
     # Process each DataFrame: select columns and rename as needed
     for key, df in df_dict.items():
         # Select columns to keep
-        temp_df = df[VAR_TO_KEEP].copy()
+        temp_df = df[var_to_keep].copy()
 
         # Rename columns if specified
         if columns_to_rename:
@@ -151,6 +150,9 @@ def process_subset(data: pd.DataFrame, third: Optional[int]) -> pd.DataFrame:
     if third is None:
         return data
 
+    if not isinstance(third, int) or third not in {1, 2, 3}:
+        raise ValueError("Parameter 'third' must be an integer in {1, 2, 3}.")
+
     subset_size = len(data) // 3
     start_idx = subset_size * (third - 1)
     end_idx = subset_size * third if third != 3 else len(data)
@@ -176,18 +178,38 @@ def fetch_mapping() -> Any:
     return mapping_ambiguous
 
 
-def get_ambiguous_data(mapping: Any, third: bool, only_annotated: bool = False) -> pd.DataFrame:
+def get_ambiguous_data(mapping: Any, third: Optional[int], only_annotated: bool = False) -> pd.DataFrame:
     """
-    Loads and processes data from multiple sources.
+    Loads and processes data from multiple sources, filtering for ambiguous codes and optionally
+    restricting to annotated records.
+
+    This function constructs a SQL query to retrieve data from a Parquet file containing SIRENE4
+    extraction data, filters for records with ambiguous APET codes (as defined by the mapping),
+    and optionally restricts results to only those records that have corresponding ground truth
+    annotations. The data is then deduplicated and processed to return a subset ("third") if requested.
 
     Args:
-        third (bool): Additional processing flag.
-        only_annotated (bool): Flag to filter only annotated data.
-
+        mapping (Any): A collection of mapping objects that define ambiguous APET codes.
+        third (Optional[int]): If provided (1, 2, or 3), returns only the corresponding third
+            of the data. If None, returns the full dataset.
+        only_annotated (bool): If True, restricts results to only records that have corresponding
+            ground truth annotations. Defaults to False.
     Returns:
-        pd.DataFrame: Processed subset of data.
+        pd.DataFrame: A processed DataFrame containing the filtered and deduplicated data.
+            The DataFrame includes all columns specified in VAR_TO_KEEP, ordered by liasse_numero.
+
+    Raises:
+        RuntimeError: If there is an error loading data from S3 or processing the query.
+        ValueError: If the 'third' parameter is not None, 1, 2, or 3.
+
+    Notes:
+        - The function uses DuckDB to execute the SQL query against S3 storage.
+        - The VAR_TO_KEEP constant defines which columns to include in the final output.
+        - The URL_SIRENE4_EXTRACTION and URL_GROUND_TRUTH constants specify the S3 locations
+          of the source data files.
+        - The process_subset function handles the optional third-based data subsetting.
     """
-    # Construct SQL query
+    # Construct SQL query components
     filter_columns_sql = ", ".join([v for v in VAR_TO_KEEP if v not in {"liasse_numero", "apet_finale"}])
     selected_columns_sql = ", ".join(VAR_TO_KEEP)
     ambiguous_codes = "', '".join([m.code.replace(".", "") for m in mapping])
@@ -225,6 +247,7 @@ def get_ambiguous_data(mapping: Any, third: bool, only_annotated: bool = False) 
 def get_ground_truth() -> pd.DataFrame:
     """
     Retrieves and loads the ground truth data from a Parquet file.
+    Ordered by liasse_numero
 
     Returns:
         pd.DataFrame: A DataFrame with distinct liasse_numero, apet_manual, and NAF2008_code.
@@ -268,14 +291,45 @@ def df_to_prompts(df: pd.DataFrame) -> List[List[Dict]]:
     return prompt_list
 
 
-def save_prompts(prompts: List[List[Dict]]):
-    fs = get_file_system()
-    prompts_df = prompts_to_df(prompts)
-    prompts_df.to_parquet(URL_PROMPTS_RAG.format(collection=os.getenv("COLLECTION_NAME")), filesystem=fs)
+# def save_prompts(
+#     prompts: List[List[Dict]],
+#     prompt_name: str = "",
+#     prompt_label: str = "",
+#     collection: str = os.getenv("COLLECTION_NAME"),
+# ) -> None:
+#     """Save prompts to a Parquet file.
+
+#     Args:
+#         prompts: List of conversations to save
+#         prompt_name: Name of the Langfuse prompt
+#         prompt_label: Label for the Langfuse prompt
+#     """
+#     fs = get_file_system()
+#     prompts_df: pd.DataFrame = prompts_to_df(prompts)
+#     prompts_df.to_parquet(
+#         URL_PROMPTS_RAG.format(collection=collection, prompt_name=prompt_name, prompt_label=prompt_label),
+#         filesystem=fs,
+#     )
 
 
-def load_prompts() -> List[List[Dict]]:
+def load_prompts(
+    prompt_name: str = "", prompt_label: str = "", collection: str = os.getenv("COLLECTION_NAME")
+) -> List[List[Dict]]:
+    """Load prompts from a Parquet file.
+
+    Args:
+        prompt_name: Name of the Langfuse prompt
+        prompt_label: Label for the Langfuse prompt
+
+    Returns:
+        List of conversations loaded from the file
+    """
     fs = get_file_system()
-    prompts_df = pd.read_parquet(URL_PROMPTS_RAG.format(collection=os.getenv("COLLECTION_NAME")), filesystem=fs)
+    url = URL_PROMPTS_RAG.format(collection=collection, prompt_name=prompt_name, prompt_label=prompt_label)
+    prompts_df = pd.read_parquet(
+        url,
+        filesystem=fs,
+    )
     prompts = df_to_prompts(prompts_df)
+    print(f"Loaded data from {url}")
     return prompts

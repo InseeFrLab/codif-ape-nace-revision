@@ -15,10 +15,12 @@ def create_content_vdb(df: pd.DataFrame) -> pd.DataFrame:
     def generate_content(row):
         sections = [
             f"# {row.code} : {row.label}",
-            f"## Explications des activités incluses dans la sous-classe\n{row.notes}" if row.notes else None,
-            f"## Liste d'exemples d'activités incluses dans la sous-classe\n{row.include}" if row.include else None,
+            f"## Explications des activités incluses dans la sous-classe\n{row.notes}" if row.get("notes") else None,
+            f"## Liste d'exemples d'activités incluses dans la sous-classe\n{row.include}"
+            if row.get("include")
+            else None,
             f"## Liste d'exemples d'activités non incluses dans la sous-classe\n{row.not_include}"
-            if row.not_include
+            if row.get("not_include")
             else None,
         ]
         return "\n\n".join(filter(None, sections))
@@ -27,7 +29,7 @@ def create_content_vdb(df: pd.DataFrame) -> pd.DataFrame:
     return df.fillna("")
 
 
-def fetch_nace2025_labels() -> pd.DataFrame:
+def fetch_nace2025_labels(excluded_fields: list[str] | None = None) -> pd.DataFrame:
     """
     Fetch NACE 2025 metadata and return a list of NAF2025 objects.
     """
@@ -42,5 +44,5 @@ def fetch_nace2025_labels() -> pd.DataFrame:
 
     nace2025_codes = get_nace2025_from_mapping(mapping)
 
-    df_nace2025 = pd.DataFrame([code.model_dump() for code in nace2025_codes])
+    df_nace2025 = pd.DataFrame([code.model_dump(exclude=excluded_fields) for code in nace2025_codes])
     return create_content_vdb(df_nace2025)

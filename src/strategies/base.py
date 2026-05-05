@@ -47,6 +47,7 @@ class EncodeStrategy(ABC):
             model=self.generation_model,
             **model_args,
         )
+
         self.tokenizer = self.llm.get_tokenizer()
         self.response_format: Optional[BaseModel] = None
 
@@ -81,7 +82,7 @@ class EncodeStrategy(ABC):
         pq.write_to_dataset(
             pa.Table.from_pandas(df),
             root_path="/".join(output_path.split("/")[:-1]),
-            partition_cols=["codable"],
+            # partition_cols=["codable"],
             basename_template=output_path.split("/")[-1],
             existing_data_behavior="overwrite_or_ignore",
             filesystem=self.fs,
@@ -91,14 +92,18 @@ class EncodeStrategy(ABC):
     def _format_activity_description(self, row: Any) -> str:
         """
         Format the activity description from the row data.
+        Adds precisions in case of agricultural activity
         """
         activity = row.get("libelle").lower() if row.get("libelle").isupper() else row.get("libelle")
 
         if row.get("activ_sec_agri_et"):
             activity += f"\nPrécisions sur l'activité agricole : {row.get('activ_sec_agri_et').lower()}"
 
-        if row.get("activ_nat_lib_et"):
-            activity += f"\nAutre nature d'activité : {row.get('activ_nat_lib_et').lower()}"
+        if row.get("activ_nat_lib_et_1"):
+            activity += f"\nAutre nature d'activité : {row.get('activ_nat_lib_et_1').lower()}"
+
+        if row.get("lib_cj"):
+            activity += f"\nCatégorie juridique de l'établissement : {row.get('lib_cj').lower()}"
 
         return activity
 
@@ -157,6 +162,15 @@ class EncodeStrategy(ABC):
         return torch.full((sequence_length,), float("-inf"))
 
     def process_outputs(self, outputs: List[RequestOutput]) -> pd.DataFrame:
+        """
+        Process a list of LLM outputs into a structured DataFrame.
+
+        Args:
+            outputs: List of RequestOutput objects from the LLM.
+
+        Returns:
+            A pandas DataFrame containing the processed outputs with postprocessing applied.
+        """
         records = [self._process_output(output).model_dump() for output in outputs]
         df = pd.DataFrame.from_records(records)
         return self.postprocess_results(df)

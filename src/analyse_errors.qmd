@@ -1,0 +1,180 @@
+---
+title: "Errors analyses notebook"
+format:
+  html:
+    code-fold: true
+---
+
+```{python}
+#| label: imports
+import asyncio
+import logging
+import os
+import time
+import tempfile
+import mlflow
+import config
+import duckdb
+import pandas as pd
+import s3fs
+from typing import Any, Dict, List, Optional
+import matplotlib.pyplot as plt
+
+# Imports depuis les constants
+from constants.paths import (
+    URL_SIRENE4_EXTRACTION,
+    URL_EXPLANATORY_NOTES,
+    URL_GROUND_TRUTH,
+    URL_MAPPING_TABLE,
+    URL_PROMPTS_RAG
+)
+from constants.data import VAR_TO_KEEP
+
+# Imports depuis les modules locaux
+from evaluation.evaluator import Evaluator
+from strategies.base import EncodeStrategy
+from strategies.cag import CAGStrategy
+from strategies.rag import RAGStrategy
+from utils.data import get_ambiguous_data, fetch_mapping, load_prompts, load_data_from_s3, df_to_prompts
+from mappings.mappings import get_mapping
+
+# Configuration
+config.setup()
+```
+
+```{python}
+#| label: import-data
+# mapping = fetch_mapping()
+# data = get_ambiguous_data(mapping, None, only_annotated=True)
+# print(len(data))
+```
+
+```{python}
+#| label: import-prompts
+prompts = load_prompts(prompt_name="rag-classifier", prompt_label="production", collection="embeddings_qwen_semi_light")
+print(len(prompts))
+```
+
+```{python}
+#| label: import-results
+query = """
+    SELECT
+        * EXCLUDE(codable),
+        CAST(codable AS BOOLEAN) AS codable
+    FROM read_parquet('s3://projet-ape/NAF-revision/relabeled-data-rag/Qwen/Qwen3-0.6B/part-0---2025-08-22--08:31.parquet')
+"""
+results = load_data_from_s3(query)
+print(len(results))
+```
+
+
+```{python}
+results.head()
+```
+
+```{python}
+# data.head()
+```
+
+```{python}
+print(prompts[0][1]["content"])
+```
+
+
+```{python}
+metrics, df_eval = Evaluator().evaluate(results, prompts)
+```
+
+```{python}
+metrics
+```
+## Cases with bad mapping
+
+
+Frequence of codes in all goldstandard
+
+```{python}
+#| label: plot-apet-manual
+
+counts = df_eval['apet_manual'].str[:2].value_counts().sort_index()
+
+plt.figure(figsize=(10, 6))
+counts.plot(kind='bar')
+plt.title('Nombre de cas par valeur de apet_manual (2 premiers caractères)')
+plt.xlabel('Valeur de apet_manual (2 premiers caractères)')
+plt.ylabel('Nombre de cas')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+```
+
+Frequence of codes in examples with bad mapping
+
+```{python}
+counts = df_eval[df_eval["mapping_ok"] == False]['apet_manual'].str[:2].value_counts().sort_index()
+
+plt.figure(figsize=(10, 6))
+counts.plot(kind='bar')
+plt.title('Nombre de cas par valeur de apet_manual (2 premiers caractères)')
+plt.xlabel('Valeur de apet_manual (2 premiers caractères)')
+plt.ylabel('Nombre de cas')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+```
+
+
+
+```{python}
+
+level = 3
+ratio_threshold = 1.3
+minimum_false_count = 50
+
+df_eval_cp = df_eval.copy()
+df_eval_cp["apet_manual_short"] = df_eval_cp['apet_manual'].str[:level]
+df_eval_false_mapping = df_eval_cp[df_eval_cp['mapping_ok'] == False]
+
+res = pd.DataFrame({
+    'false_count': df_eval_false_mapping['apet_manual_short'].value_counts(),
+    'global_count': df_eval_cp['apet_manual_short'].value_counts(),
+    'false_prop': 100*df_eval_false_mapping['apet_manual_short'].value_counts(normalize=True),
+    'global_prop': 100*df_eval_cp['apet_manual_short'].value_counts(normalize=True)
+}).fillna(0)
+
+res['ratio'] = res['false_prop'] / res['global_prop']
+
+res = res[(res['ratio'] >= ratio_threshold) & (res['false_count'] >= minimum_false_count)]
+res=res.sort_values('ratio', ascending=False)
+
+res
+
+```
+
+
+```{python}
+# from vector_db.notices_nace import fetch_nace2025_labels
+# nace2025 = fetch_nace2025_labels()
+# nace2025["code"] = nace2025["code"].str.replace('.', '')
+# nace2025 = nace2025[["code", "label"]]
+# nace2025
+```
+
+
+```{python}
+# res = res.reset_index().merge(nace2025, left_on='apet_manual_short', right_on='code', how='left').set_index('apet_manual_short')
+
+# res
+# res = res.drop(columns=['code'])
+```
+
+
+```{python}
+#nace2025[nace2025["code"] == "011"]
+```
+
+
+```{python}
+toto = fetch_nace2025_labels()
+toto
+```
