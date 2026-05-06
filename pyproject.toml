@@ -21,6 +21,8 @@ dependencies = [
     "plotly>=6.3.0",
     "python-dotenv>=1.1.1",
     "openai>=1.102.0",
+    "tenacity>=9.0.0",
+    "nest-asyncio>=1.6.0",
 ]
 authors = [
   {name="Thomas Faria", email="thomas.faria@insee.fr"}

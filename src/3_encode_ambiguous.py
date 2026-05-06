@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+# os.chdir("codif-ape-nace-revision/src")
 import tempfile
 import time
 
@@ -17,6 +18,9 @@ from utils.data import get_ambiguous_data
 
 config.setup()
 
+# interactif -------------------------
+
+
 # STRATEGY_MAP = {
 #     "cag": CAGStrategy,
 #     "rag": RAGStrategy,
@@ -26,13 +30,13 @@ config.setup()
 # experiment_name = "Test"
 # run_name = None
 # collection_name=None
-# llm_name="Qwen/Qwen3-0.6B"
+# llm_name="gemma4-26b-moe"
 # third=None
 # prompts_from_file=False
 # save_prompts=False
 # prompt_name="cag-classifier"
 # prompt_label="production"
-# sample_size=None
+# sample_size=10
 # top_k=None
 # only_annotated=False
 
@@ -96,6 +100,7 @@ async def run_encode(
         # prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
         prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts)
 
+        # generation_outputs, generation_time_mn = asyncio.run(_generate_outputs(strategy, prompts))
         generation_outputs, generation_time_mn = await _generate_outputs(strategy, prompts)
         results = _process_and_merge(strategy, data, generation_outputs)
         metrics, df_eval = _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn, strategy)

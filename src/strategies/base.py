@@ -3,19 +3,36 @@ import logging
 import math
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
+import httpx
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletion
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
+from openai.types.chat import ParsedChatCompletion
+from pydantic import BaseModel
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
+from tqdm.asyncio import tqdm
 
 from constants.vector_db import MAX_CONCURRENCY
 from utils.data import fetch_mapping, get_file_system
 
 logger = logging.getLogger(__name__)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, (RateLimitError, APIConnectionError)):
+        return True
+    if isinstance(exc, APIStatusError):
+        return exc.status_code in {408, 429, 500, 502, 503, 504}
+    return False
 
 
 class EncodeStrategy(ABC):
@@ -35,8 +52,8 @@ class EncodeStrategy(ABC):
         self.client = AsyncOpenAI(
             base_url=os.environ["LLMLAB_URL"],
             api_key=os.environ["LLMLAB_API_KEY"],
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0),
         )
-        self.semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
         self.response_format: Optional[BaseModel] = None
         self.sampling_params: Dict[str, Any] = {}
@@ -88,45 +105,81 @@ class EncodeStrategy(ABC):
 
         return activity
 
-    async def call_llm(self, messages_list: List[List[Dict]]) -> List[ChatCompletion]:
+    @retry(
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=1, min=2, max=60),
+        retry=retry_if_exception(_is_retryable),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
+    async def _call_once(self, messages: List[Dict]) -> ParsedChatCompletion:
+        # `chat.completions.parse` enforces the Pydantic schema server-side via strict
+        # JSON-Schema and parses the response into a typed model under `.parsed`.
+        return await self.client.chat.completions.parse(
+            model=self.generation_model,
+            messages=messages,
+            logprobs=True,
+            response_format=self.response_format,
+            **self.sampling_params,
+        )
+
+    async def call_llm(
+        self,
+        messages_list: List[List[Dict]],
+        *,
+        max_concurrency: Optional[int] = None,
+        error_policy: str = "store_none",
+    ) -> List[Optional[ParsedChatCompletion]]:
         """
-        Run all chat completions concurrently against the llm.lab API,
-        rate-limited by self.semaphore.
+        Run chat completions concurrently with bounded concurrency, retries, and a progress bar.
+
+        Args:
+            messages_list: list of conversations.
+            max_concurrency: override the default concurrency for this call.
+            error_policy: "raise" → re-raise on failure ; "store_none" → return None for failed items
+                          (default) ; "store_exception" → return the Exception object.
         """
-        response_format_arg = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": self.response_format.__name__,
-                "schema": self.response_format.model_json_schema(),
-                "strict": True,
-            },
-        }
+        if error_policy not in {"raise", "store_none", "store_exception"}:
+            raise ValueError(f"Unknown error_policy: {error_policy!r}")
 
-        async def _one_call(messages: List[Dict]) -> ChatCompletion:
-            async with self.semaphore:
-                return await self.client.chat.completions.create(
-                    model=self.generation_model,
-                    messages=messages,
-                    logprobs=True,
-                    response_format=response_format_arg,
-                    **self.sampling_params,
-                )
+        semaphore = asyncio.Semaphore(max_concurrency or MAX_CONCURRENCY)
 
-        return await asyncio.gather(*(_one_call(m) for m in messages_list))
+        async def _one(messages: List[Dict]) -> Union[ParsedChatCompletion, BaseException]:
+            async with semaphore:
+                try:
+                    return await self._call_once(messages)
+                except BaseException as exc:
+                    return exc
 
-    def _parse_content(self, content: str) -> Optional[BaseModel]:
-        try:
-            return TypeAdapter(self.response_format).validate_json(content)
-        except ValidationError as e:
-            logger.error(f"Validation error: {e}")
-            return None
+        results: List[Any] = await tqdm.gather(
+            *(_one(m) for m in messages_list),
+            desc="LLM generation",
+        )
 
-    def _process_output(self, response: ChatCompletion) -> BaseModel:
-        """Parse a single ChatCompletion into a response_format BaseModel with confidence."""
-        content = response.choices[0].message.content
-        parsed = self._parse_content(content)
-        if parsed is None or getattr(parsed, "nace2025", None) is None:
+        failed = [(i, r) for i, r in enumerate(results) if isinstance(r, BaseException)]
+        for idx, exc in failed:
+            logger.error("LLM call %d failed: %s", idx, exc)
+        logger.info("LLM generation: %d ok, %d failed", len(results) - len(failed), len(failed))
+
+        if error_policy == "raise" and failed:
+            raise failed[0][1]
+        if error_policy == "store_none":
+            results = [None if isinstance(r, BaseException) else r for r in results]
+        return results
+
+    def _process_output(self, response: Union[ParsedChatCompletion, BaseException, None]) -> BaseModel:
+        """Extract the parsed BaseModel from a ParsedChatCompletion and attach a confidence."""
+        if response is None or isinstance(response, BaseException):
             return self.response_format(codable=False, nace2025=None, confidence=0.0)
+
+        parsed: BaseModel = response.choices[0].message.parsed
+
+        # JSON-Schema cannot express the cross-field constraint "codable=True ⇒ nace2025 not null",
+        # so the LLM may return that combination. Treat it as not codable.
+        if parsed.nace2025 is None:
+            parsed.codable = False
+            parsed.confidence = 0.0
+            return parsed
 
         logprobs_obj = response.choices[0].logprobs
         token_logprobs = getattr(logprobs_obj, "content", None) if logprobs_obj else None
@@ -155,7 +208,7 @@ class EncodeStrategy(ABC):
                     return math.exp(sum(window) / len(window))
         return 0.0
 
-    def process_outputs(self, outputs: List[ChatCompletion]) -> pd.DataFrame:
+    def process_outputs(self, outputs: List[Optional[ParsedChatCompletion]]) -> pd.DataFrame:
         """Process a list of LLM outputs into a structured DataFrame."""
         records = [self._process_output(output).model_dump() for output in outputs]
         df = pd.DataFrame.from_records(records)

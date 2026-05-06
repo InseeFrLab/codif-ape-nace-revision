@@ -1,4 +1,6 @@
-# uv run src/3b_encode_ambiguous_test.py --strategy rag --experiment_name NACE2025_DATASET --llm_name Qwen/Qwen3-0.6B --third 1
+# Interactive pipeline for debugging — run line by line in a REPL / Jupyter / VSCode.
+# Each section can be executed independently. Intermediate variables (data, prompts,
+# generation_outputs, results, metrics, df_eval) stay available in the namespace.
 
 import asyncio
 import logging
@@ -7,174 +9,135 @@ import tempfile
 import time
 
 import mlflow
+import nest_asyncio
 
+os.chdir("codif-ape-nace-revision/src")
 import config
+from constants.data import VAR_TO_KEEP
 from constants.paths import URL_SIRENE4_EXTRACTION
 from evaluation.evaluator import Evaluator
-from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
 from strategies.rag import RAGStrategy
-from constants.data import VAR_TO_KEEP
 from utils.data import get_ambiguous_data
 
 config.setup()
+nest_asyncio.apply()  # allow multiple asyncio.run() calls in the same interpreter
 
 
-async def run_encode(
-    strategy_cls: EncodeStrategy,
-    experiment_name: str,
-    run_name: str,
-    collection_name: str,
-    llm_name: str,
-    third: int,
-    prompts_from_file: bool,
-    prompt_name: str,
-    prompt_label: str,
-    sample_size: int = None,
-):
-    logging.info("Define strategy ==========================")
-    strategy = strategy_cls(
-        generation_model=llm_name,
-        prompt_name=prompt_name,
-        prompt_label=prompt_label,
-        collection_name=collection_name,
-    )
-    logging.info("Use get_ambiguous_data ==========================")
-    data = get_ambiguous_data(strategy.mapping, third, only_annotated=True, var_to_keep=VAR_TO_KEEP)
-    if sample_size is not None:
-        data = data.head(n=sample_size)
-        data = data.reset_index(drop=True)
-
-    data_length = len(data)
-    logging.info(f"Must proceed {data_length} prompts")
-
-    logging.info("Get prompts (retrieval) ==========================")
-
-    start_time = time.time()
-    # async def main():
-    #     prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
-    #     return prompts
-    # prompts = asyncio.run(main())
-    prompts = await strategy.get_prompts(data, load_prompts_from_file=prompts_from_file)
-    retrieval_time_mn = (time.time() - start_time) / 60
-    print(f"Total time for retrieval: {retrieval_time_mn}")
-    print(f"Nb of prompts: {len(prompts)}")
-
-    logging.info("Prompts retrieved !!! ==========================")
-
-    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
-    mlflow.set_experiment(experiment_name)
-    with mlflow.start_run(run_name=run_name):
-        outputs = strategy.call_llm(prompts, strategy.sampling_params)
-
-        start_time = time.time()
-        processed_outputs = strategy.process_outputs(outputs)
-        generation_time_mn = time.time() - start_time
-        print(f"Generating time: {generation_time_mn} ===================")
-
-        results = data.merge(processed_outputs, left_index=True, right_index=True)
-
-        output_path = strategy.save_results(results, third)
-
-        metrics, df_eval = Evaluator().evaluate(results, prompts)
-        metrics["num_coded"] = results["codable"].sum()
-        metrics["num_not_coded"] = len(results) - results["codable"].sum()
-        metrics["pct_not_coded"] = round((len(results) - results["codable"].sum()) / len(results) * 100, 2)
-        metrics["retrieval_time_mn"] = round(retrieval_time_mn, 1)
-        metrics["generation_time_mn"] = round(generation_time_mn, 1)
-
-        # Log MLflow parameters and metrics
-        mlflow.log_params(
-            {
-                "LLM_MODEL": llm_name,
-                "TEMPERATURE": strategy.sampling_params.temperature,
-                "input_path": URL_SIRENE4_EXTRACTION,
-                "output_path": output_path,
-                "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
-                "COLLECTION_NAME": collection_name,
-                "EMBEDDING_MODEL": strategy.db.vector_name,
-            }
-        )
-
-        for metric, value in metrics.items():
-            mlflow.log_metric(metric, value)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            file_path = os.path.join(tmpdir, "df_eval.csv")
-            df_eval.to_csv(file_path, index=False)
-            mlflow.log_artifact(file_path, artifact_path="dataframes")
-
-    print(f"collection_name: {collection_name} ======================")
+# =============================================================================
+# Parameters — edit here for interactive runs
+# =============================================================================
+strategy_cls       = CAGStrategy        # CAGStrategy or RAGStrategy
+experiment_name    = "Test"
+run_name           = None
+collection_name    = None               # only used for RAG
+llm_name           = "gemma4-26b-moe"
+third              = None
+prompts_from_file  = False
+save_prompts       = False
+prompt_name        = "cag-classifier"   # "rag-classifier" for RAG
+prompt_label       = "production"
+top_k              = None               # None for CAG, e.g. 5 for RAG
+sample_size        = 50
+only_annotated     = True
+batch_size         = 512
 
 
-if __name__ == "__main__":
-    import argparse
+# =============================================================================
+# Step 1 — Initialize strategy
+# =============================================================================
+logging.info("Initializing strategy ==========================")
+kwargs = {
+    "generation_model": llm_name,
+    "prompt_name":      prompt_name,
+    "prompt_label":     prompt_label,
+}
+if strategy_cls is RAGStrategy:
+    kwargs["collection_name"] = collection_name
+strategy = strategy_cls(**kwargs)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--strategy", choices=["rag", "cag"], required=True)
-    parser.add_argument("--experiment_name", type=str, default="Test")
-    parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument("--collection_name", type=str, default="embeddings_qwen")
-    parser.add_argument("--llm_name", type=str, default="Qwen/Qwen3-0.6B")
-    parser.add_argument("--third", type=int, default=None)
-    parser.add_argument("--prompts_from_file", action="store_true")
-    parser.add_argument("--prompt_name", type=str, default="rag-classifier")
-    parser.add_argument("--prompt_label", type=str, default="production")
-    parser.add_argument("--sample_size", type=int, default=None)
 
-    args = parser.parse_args()
+# =============================================================================
+# Step 2 — Load ambiguous data
+# =============================================================================
+logging.info("Loading ambiguous data ==========================")
+data = get_ambiguous_data(strategy.mapping, third, only_annotated, VAR_TO_KEEP)
+if sample_size is not None:
+    data = data.head(n=sample_size).reset_index(drop=True)
 
-    # args_list = [
-    #     "--strategy",
-    #     "rag",
-    #     "--experiment_name",
-    #     "NACE2025_DATASET",
-    #     "--collection_name",
-    #     "embeddings_qwen",
-    #     "--llm_name",
-    #     "Qwen/Qwen3-0.6B",
-    #     "--third",
-    #     "1",
-    #     "--sample_size",
-    #     "15",
-    # ]
-    # args = parser.parse_args(args_list)
 
-    assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
-    # assert "COLLECTION_NAME" in os.environ, "Set COLLECTION_NAME"
+# =============================================================================
+# Step 3 — Retrieve prompts
+# =============================================================================
+logging.info("Retrieving prompts ==========================")
+_t0 = time.time()
+prompts = asyncio.run(strategy.get_prompts(
+    data,
+    load_prompts_from_file=prompts_from_file,
+    top_k=top_k,
+    save=save_prompts,
+))
+retrieval_time_mn = (time.time() - _t0) / 60
+logging.info(f"Retrieved {len(prompts)} prompts in {retrieval_time_mn:.2f} min")
 
-    STRATEGY_MAP = {
-        "rag": RAGStrategy,
-        "cag": CAGStrategy,
+
+# =============================================================================
+# Step 4 — LLM generation
+# =============================================================================
+logging.info("Starting LLM generation ==========================")
+_t0 = time.time()
+generation_outputs = asyncio.run(strategy.call_llm(prompts))
+generation_time_mn = (time.time() - _t0) / 60
+logging.info(f"Generated {len(generation_outputs)} outputs in {generation_time_mn:.2f} min")
+
+generation_outputs[2]
+
+# =============================================================================
+# Step 5 — Process outputs and merge with data
+# =============================================================================
+processed_outputs = strategy.process_outputs(generation_outputs)
+results = data.merge(processed_outputs, left_index=True, right_index=True)
+
+
+# =============================================================================
+# Step 6 — Evaluate
+# =============================================================================
+metrics, df_eval = Evaluator().evaluate(results, prompts)
+metrics.update({
+    "num_coded":         int(results["codable"].sum()),
+    "num_not_coded":     int(len(results) - results["codable"].sum()),
+    "pct_not_coded":     round((len(results) - results["codable"].sum()) / len(results) * 100, 2),
+    "retrieval_time_mn": round(retrieval_time_mn, 1),
+    "generation_time_mn": round(generation_time_mn, 1),
+})
+print(metrics)
+
+
+# =============================================================================
+# Step 7 — MLflow logging (optional — comment out if you only want to debug)
+# =============================================================================
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+mlflow.set_experiment(experiment_name)
+with mlflow.start_run(run_name=run_name):
+    output_path = strategy.save_results(results, third=None)
+    params = {
+        "LLM_MODEL":              llm_name,
+        "TEMPERATURE":            strategy.sampling_params["temperature"],
+        "input_path":             URL_SIRENE4_EXTRACTION,
+        "output_path":            output_path,
+        "strategy":               "cag" if isinstance(strategy, CAGStrategy) else "rag",
+        "top_k":                  top_k,
+        "URL_SIRENE4_EXTRACTION": URL_SIRENE4_EXTRACTION,
     }
+    if hasattr(strategy, "db"):
+        params["COLLECTION_NAME"] = collection_name
+        params["EMBEDDING_MODEL"] = getattr(strategy.db, "vector_name", None)
 
-    asyncio.run(
-        run_encode(
-            strategy_cls=STRATEGY_MAP[args.strategy],
-            experiment_name=args.experiment_name,
-            run_name=args.run_name,
-            collection_name=args.collection_name,
-            llm_name=args.llm_name,
-            third=args.third,
-            prompts_from_file=args.prompts_from_file,
-            prompt_name=args.prompt_name,
-            prompt_label=args.prompt_label,
-            sample_size=args.sample_size,
-        )
-    )
+    mlflow.log_params(params)
+    for metric, value in metrics.items():
+        mlflow.log_metric(metric, value)
 
-    # strategy_cls = STRATEGY_MAP[args.strategy]
-    # experiment_name = args.experiment_name
-    # run_name = args.run_name
-    # llm_name = args.llm_name
-    # third = args.third
-    # prompts_from_file = args.prompts_from_file
-    # collection_name=args.collection_name
-    # prompt_name=args.prompt_name
-    # prompt_label=args.prompt_label
-    # sample_size=args.sample_size
-
-    # async def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
-    #     tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
-    #     prompts = await tqdm.gather(*tasks)
-    #     return prompts
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = os.path.join(tmpdir, "df_eval.csv")
+        df_eval.to_csv(file_path, index=False)
+        mlflow.log_artifact(file_path, artifact_path="dataframes")

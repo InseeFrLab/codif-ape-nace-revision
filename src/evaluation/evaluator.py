@@ -27,6 +27,13 @@ class Evaluator:
         ground_truth = get_ground_truth()
         ground_truth = ground_truth[ground_truth["liasse_numero"].isin(results["liasse_numero"])]
 
+        if ground_truth.empty:
+            raise ValueError(
+                "No annotated rows found in the results sample. "
+                "Either run the pipeline with only_annotated=True so the sample is drawn from "
+                "annotated rows only, or increase sample_size to improve overlap with ground truth."
+            )
+
         # Step 2: Map prompts
         prompt_mapping = self.get_prompt_mapping(prompts, ground_truth)
 
