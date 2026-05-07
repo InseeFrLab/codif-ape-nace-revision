@@ -27,17 +27,17 @@ nest_asyncio.apply()  # allow multiple asyncio.run() calls in the same interpret
 # =============================================================================
 # Parameters — edit here for interactive runs
 # =============================================================================
-strategy_cls       = CAGStrategy        # CAGStrategy or RAGStrategy
-experiment_name    = "Test"
+strategy_cls       = RAGStrategy        # CAGStrategy or RAGStrategy
+experiment_name    = "Test"             
 run_name           = None
-collection_name    = None               # only used for RAG
+collection_name    = "embeddings_qwen"               # only used for RAG # embeddings_qwen
 llm_name           = "gemma4-26b-moe"
 third              = None
 prompts_from_file  = False
 save_prompts       = False
 prompt_name        = "cag-classifier"   # "rag-classifier" for RAG
 prompt_label       = "production"
-top_k              = None               # None for CAG, e.g. 5 for RAG
+top_k              = 5               # None for CAG, e.g. 5 for RAG
 sample_size        = 50
 only_annotated     = True
 batch_size         = 512
@@ -113,31 +113,32 @@ metrics.update({
 print(metrics)
 
 
-# =============================================================================
-# Step 7 — MLflow logging (optional — comment out if you only want to debug)
-# =============================================================================
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
-mlflow.set_experiment(experiment_name)
-with mlflow.start_run(run_name=run_name):
-    output_path = strategy.save_results(results, third=None)
-    params = {
-        "LLM_MODEL":              llm_name,
-        "TEMPERATURE":            strategy.sampling_params["temperature"],
-        "input_path":             URL_SIRENE4_EXTRACTION,
-        "output_path":            output_path,
-        "strategy":               "cag" if isinstance(strategy, CAGStrategy) else "rag",
-        "top_k":                  top_k,
-        "URL_SIRENE4_EXTRACTION": URL_SIRENE4_EXTRACTION,
-    }
-    if hasattr(strategy, "db"):
-        params["COLLECTION_NAME"] = collection_name
-        params["EMBEDDING_MODEL"] = getattr(strategy.db, "vector_name", None)
+# # =============================================================================
+# # Step 7 — MLflow logging (optional — comment out if you only want to debug)
+# # =============================================================================
+# mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+# mlflow.set_experiment(experiment_name)
+# with mlflow.start_run(run_name=run_name):
+#     output_path = strategy.save_results(results, third=None)
+#     params = {
+#         "LLM_MODEL":              llm_name,
+#         "TEMPERATURE":            strategy.sampling_params["temperature"],
+#         "input_path":             URL_SIRENE4_EXTRACTION,
+#         "output_path":            output_path,
+#         "strategy":               "cag" if isinstance(strategy, CAGStrategy) else "rag",
+#         "top_k":                  top_k,
+#         "URL_SIRENE4_EXTRACTION": URL_SIRENE4_EXTRACTION,
+#     }
+#     if hasattr(strategy, "db"):
+#         params["COLLECTION_NAME"] = collection_name
+#         params["EMBEDDING_MODEL"] = getattr(strategy.db, "vector_name", None)
 
-    mlflow.log_params(params)
-    for metric, value in metrics.items():
-        mlflow.log_metric(metric, value)
+#     mlflow.log_params(params)
+#     for metric, value in metrics.items():
+#         mlflow.log_metric(metric, value)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = os.path.join(tmpdir, "df_eval.csv")
-        df_eval.to_csv(file_path, index=False)
-        mlflow.log_artifact(file_path, artifact_path="dataframes")
+#     with tempfile.TemporaryDirectory() as tmpdir:
+#         file_path = os.path.join(tmpdir, "df_eval.csv")
+#         df_eval.to_csv(file_path, index=False)
+#         mlflow.log_artifact(file_path, artifact_path="dataframes")
+
