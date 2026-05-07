@@ -4,10 +4,9 @@ from math import ceil
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
-from langchain.schema import Document
 from langfuse import Langfuse
 from pydantic import BaseModel, Field
-from qdrant_client.http.models import NamedVector, SearchRequest
+from qdrant_client.http.models import NamedVector, ScoredPoint, SearchRequest
 from tqdm.asyncio import tqdm
 
 from constants.llm import MAX_NEW_TOKEN, TEMPERATURE
@@ -187,14 +186,7 @@ class RAGStrategy(EncodeStrategy):
         """
         prompts: List[List[Dict]] = []
         for activity, docs in zip(activities, results):
-            langchain_docs = [
-                Document(
-                    page_content=d.payload["page_content"],
-                    metadata=d.payload.get("metadata", {}),
-                )
-                for d in docs
-            ]
-            proposed_codes, list_codes = self._format_documents(langchain_docs)
+            proposed_codes, list_codes = self._format_documents(docs)
 
             convo: List[Dict] = self.prompt_template.compile(
                 activity=activity,
@@ -219,18 +211,19 @@ class RAGStrategy(EncodeStrategy):
         date = datetime.now().strftime("%Y-%m-%d--%H:%M")
         return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{self.generation_model}/part-{{i}}-{{third}}--{date}.parquet"
 
-    def _format_documents(self, docs: List[Document]) -> Tuple[str, str]:
+    def _format_documents(self, docs: List[ScoredPoint]) -> Tuple[str, str]:
         """
-        Formats retrieved documents into two string representations.
+        Formats retrieved Qdrant points into two string representations.
 
         Args:
-            docs: A list of LangChain Document objects with metadata.
+            docs: A list of Qdrant ScoredPoint objects whose payload holds
+                  'page_content' (str) and 'metadata' (dict with a 'code' key).
 
         Returns:
             A tuple of:
                 - A formatted string containing document content blocks.
                 - A comma-separated list of classification codes.
         """
-        proposed_codes = "\n\n".join(f"========\n{doc.page_content}" for doc in docs)
-        list_codes = ", ".join(f"'{doc.metadata['code']}'" for doc in docs)
+        proposed_codes = "\n\n".join(f"========\n{d.payload['page_content']}" for d in docs)
+        list_codes = ", ".join(f"'{d.payload['metadata']['code']}'" for d in docs)
         return proposed_codes, list_codes

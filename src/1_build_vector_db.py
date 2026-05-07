@@ -1,8 +1,6 @@
 import logging
 import os
 
-from langchain_community.document_loaders import DataFrameLoader
-
 import config
 from vector_db.loading import create_vector_db, get_embedding_model
 from vector_db.notices_nace import fetch_nace2025_labels
@@ -14,8 +12,13 @@ logger = logging.getLogger(__name__)
 def main(collection_name: str, excluded_fields: list[str] | None = None):
     labels = fetch_nace2025_labels(excluded_fields)
 
-    # Load documents
-    docs = DataFrameLoader(labels, page_content_column="content").load()
+    # Build a list of {page_content, metadata} mappings, the format expected
+    # by create_vector_db. The 'content' column becomes page_content; every
+    # other column lands in metadata.
+    docs = [
+        {"page_content": row.pop("content"), "metadata": row}
+        for row in labels.to_dict(orient="records")
+    ]
 
     # Initialize embedding model
     emb_model = get_embedding_model(os.getenv("EMBEDDING_MODEL"))
