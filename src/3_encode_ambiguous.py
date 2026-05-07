@@ -1,10 +1,8 @@
 import asyncio
 import logging
 import os
-# os.chdir("codif-ape-nace-revision/src")
 import tempfile
 import time
-
 import mlflow
 
 import config
@@ -17,60 +15,6 @@ from constants.data import VAR_TO_KEEP
 from utils.data import get_ambiguous_data
 
 config.setup()
-
-# interactif -------------------------
-
-
-# STRATEGY_MAP = {
-#     "cag": CAGStrategy,
-#     "rag": RAGStrategy,
-# }
-
-# strategy_cls=STRATEGY_MAP["cag"]
-# experiment_name = "Test"
-# run_name = None
-# collection_name=None
-# llm_name="gemma4-26b-moe"
-# third=None
-# prompts_from_file=False
-# save_prompts=False
-# prompt_name="cag-classifier"
-# prompt_label="production"
-# sample_size=10
-# top_k=None
-# only_annotated=False
-
-# def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
-#     logging.info("Initializing strategy ==========================")
-
-#     kwargs = {
-#         "generation_model": llm_name,
-#         "prompt_name": prompt_name,
-#         "prompt_label": prompt_label,
-#     }
-
-#     if strategy_cls in [RAGStrategy]:
-#         kwargs["collection_name"] = collection_name
-
-#     return strategy_cls(**kwargs)
-
-
-# def _load_data(strategy, third, only_annotated, sample_size=None):
-#     logging.info("Loading ambiguous data ==========================")
-#     data = get_ambiguous_data(strategy.mapping, third, only_annotated)
-#     if sample_size is not None:
-#         data = data.head(n=sample_size).reset_index(drop=True)
-#     return data
-
-# strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
-# data = _load_data(strategy, third, only_annotated, sample_size)
-# data.shape
-
-
-
-
-
-
 
 
 async def run_encode(
@@ -225,22 +169,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
-    # args_list = [
-    #     "--strategy",
-    #     "cag",
-    #     "--experiment_name",
-    #     "NACE2025_DATASET",
-    #     "--llm_name",
-    #     "Qwen/Qwen3-32B",
-    #     "--sample_size",
-    #     "1000",
-    #     "--only_annotated",
-    #     "false"
-    # ]
-    # args = parser.parse_args(args_list)
-
-
-
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
 
     if args.only_annotated == "true":
@@ -288,17 +216,3 @@ if __name__ == "__main__":
         )
     )
 
-
-# strategy_cls=STRATEGY_MAP[args.strategy]
-# experiment_name=args.experiment_name
-# run_name=args.run_name
-# collection_name=args.collection_name
-# llm_name=args.llm_name
-# third=args.third
-# prompts_from_file=args.prompts_from_file
-# prompt_name=args.prompt_name
-# prompt_label=args.prompt_label
-# sample_size=args.sample_size
-# top_k=args.top_k
-# save_prompts=args.save_prompts
-# only_annotated=args.only_annotated
