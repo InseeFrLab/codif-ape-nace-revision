@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 
@@ -9,7 +10,7 @@ config.setup()
 logger = logging.getLogger(__name__)
 
 
-def main(collection_name: str, excluded_fields: list[str] | None = None):
+def main(collection_name: str, model_name: str, excluded_fields: list[str] | None = None):
     labels = fetch_nace2025_labels(excluded_fields)
 
     # Build a list of {page_content, metadata} mappings, the format expected
@@ -21,15 +22,40 @@ def main(collection_name: str, excluded_fields: list[str] | None = None):
     ]
 
     # Initialize embedding model
-    emb_model = get_embedding_model(os.getenv("EMBEDDING_MODEL"))
+    emb_model = get_embedding_model(model_name)
 
-    _ = create_vector_db(docs, emb_model, collection_name)
+    _ = create_vector_db(docs, emb_model, collection_name, model_name=model_name)
 
     logging.info(f"Qdrant DB has been created in collection '{collection_name}'.")
 
 
 if __name__ == "__main__":
-    # main(collection_name="embeddings_qwen_semi_light", excluded_fields=["not_include", "notes"])
-    # main(collection_name="embeddings_qwen_light", excluded_fields=["include", "not_include", "notes"])
-    main(collection_name="embeddings_qwen")
-    # main(collection_name=os.getenv("COLLECTION_NAME"))
+    parser = argparse.ArgumentParser(
+        description="Build a Qdrant vector database from NACE 2025 labels."
+    )
+    parser.add_argument(
+        "--collection_name",
+        type=str,
+        default="embeddings_qwen",
+        help="Name of the Qdrant collection to create.",
+    )
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default=None,
+        help="embedding model name.",
+    )
+    parser.add_argument(
+        "--excluded_fields",
+        type=str,
+        nargs="*",
+        default=None,
+        help="Fields to exclude from the NACE labels (e.g. include not_include notes).",
+    )
+    args = parser.parse_args()
+
+    main(
+        collection_name=args.collection_name, 
+        model_name=args.model_name, 
+        excluded_fields=args.excluded_fields
+    )

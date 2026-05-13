@@ -69,7 +69,7 @@ for query_batch, emb_batch in zip(_chunked(queries, query_batch_size), _chunked(
     # 1️⃣ Batch retrieval
     search_requests = [
         SearchRequest(
-            vector=NamedVector(name=strategy.db.vector_name, vector=vec),
+            vector=NamedVector(name=strategy.db.model_name, vector=vec),
             limit=retrieve_limit,
             with_payload=True,
         )
@@ -173,7 +173,7 @@ if use_reranker:
 # for use_reranker in [True, False]:
 search_requests = [
     SearchRequest(
-        vector=NamedVector(name=strategy.db.vector_name, vector=vec),
+        vector=NamedVector(name=strategy.db.model_name, vector=vec),
         limit=35 if use_reranker else top_k,
         with_payload=True,
     )
@@ -310,7 +310,7 @@ if use_reranker:
 for use_reranker in [True, False]:
     search_requests = [
         SearchRequest(
-            vector=NamedVector(name=strategy.db.vector_name, vector=vec),
+            vector=NamedVector(name=strategy.db.model_name, vector=vec),
             limit=35 if use_reranker else top_k,
             with_payload=True,
         )

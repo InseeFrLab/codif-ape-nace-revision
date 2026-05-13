@@ -131,7 +131,7 @@ def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, 
     # If RAG
     if hasattr(strategy, "db"):
         params["COLLECTION_NAME"] = collection_name
-        params["EMBEDDING_MODEL"] = getattr(strategy.db, "vector_name", None)
+        params["EMBEDDING_MODEL"] = getattr(strategy.db, "model_name", None)
 
     mlflow.log_params(params)
     for metric, value in metrics.items():

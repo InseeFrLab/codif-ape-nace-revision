@@ -146,7 +146,7 @@ class RAGStrategy(EncodeStrategy):
         """Run batched search requests in Qdrant."""
         search_requests = [
             SearchRequest(
-                vector=NamedVector(name=self.db.vector_name, vector=vec),
+                vector=NamedVector(name=self.db.model_name, vector=vec),
                 limit=top_k,
                 with_payload=True,
             )

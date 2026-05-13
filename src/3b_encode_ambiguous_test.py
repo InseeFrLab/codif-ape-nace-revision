@@ -131,7 +131,7 @@ print(metrics)
 #     }
 #     if hasattr(strategy, "db"):
 #         params["COLLECTION_NAME"] = collection_name
-#         params["EMBEDDING_MODEL"] = getattr(strategy.db, "vector_name", None)
+#         params["EMBEDDING_MODEL"] = getattr(strategy.db, "model_name", None)
 
 #     mlflow.log_params(params)
 #     for metric, value in metrics.items():

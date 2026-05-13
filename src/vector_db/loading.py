@@ -7,6 +7,7 @@ from openai import AsyncOpenAI, OpenAI
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qm
 from qdrant_client.http.exceptions import UnexpectedResponse
+from tqdm.asyncio import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +17,11 @@ EMBED_BATCH_SIZE = 16
 UPSERT_BATCH_SIZE = 16
 
 
-def _vector_to_api_model(vector_name: str) -> str:
+def _vector_to_api_model(model_name: str) -> str:
     """Convert a Qdrant named-vector key into the slug expected by the LLM Lab
     embeddings API. Example: 'Qwen/Qwen3-Embedding-8B' -> 'qwen3-embedding-8b'.
     The heuristic strips the org/repo prefix and lowercases the result."""
-    return vector_name.rsplit("/", 1)[-1].lower()
+    return model_name.rsplit("/", 1)[-1].lower()
 
 
 class Embeddings:
@@ -46,24 +47,28 @@ class Embeddings:
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         out: List[List[float]] = []
-        for i in range(0, len(texts), self.batch_size):
-            chunk = texts[i : i + self.batch_size]
-            try:
-                resp = self._sync.embeddings.create(model=self.model, input=chunk)
-            except Exception as e:
-                raise self._explain(e) from e
-            out.extend(d.embedding for d in resp.data)
+        with tqdm(total=len(texts), desc="Embedding documents", unit="doc") as pbar:
+            for i in range(0, len(texts), self.batch_size):
+                chunk = texts[i : i + self.batch_size]
+                try:
+                    resp = self._sync.embeddings.create(model=self.model, input=chunk)
+                except Exception as e:
+                    raise self._explain(e) from e
+                out.extend(d.embedding for d in resp.data)
+                pbar.update(len(chunk))
         return out
 
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         out: List[List[float]] = []
-        for i in range(0, len(texts), self.batch_size):
-            chunk = texts[i : i + self.batch_size]
-            try:
-                resp = await self._async.embeddings.create(model=self.model, input=chunk)
-            except Exception as e:
-                raise self._explain(e) from e
-            out.extend(d.embedding for d in resp.data)
+        with tqdm(total=len(texts), desc="Embedding documents", unit="doc") as pbar:
+            for i in range(0, len(texts), self.batch_size):
+                chunk = texts[i : i + self.batch_size]
+                try:
+                    resp = await self._async.embeddings.create(model=self.model, input=chunk)
+                except Exception as e:
+                    raise self._explain(e) from e
+                out.extend(d.embedding for d in resp.data)
+                pbar.update(len(chunk))
         return out
 
     def healthcheck(self) -> int:
@@ -80,7 +85,7 @@ class VectorDB:
 
     client: QdrantClient
     embeddings: Embeddings
-    vector_name: str
+    model_name: str
     collection_name: str
 
 
@@ -94,7 +99,7 @@ def get_qdrant_client() -> QdrantClient:
     )
 
 
-def get_embedding_model_name(client: QdrantClient, collection_name: str) -> str:
+def get_collection_model_name(client: QdrantClient, collection_name: str) -> str:
     """Retrieve the named-vector key (i.e. embedding model name) from a Qdrant collection."""
     try:
         info = client.get_collection(collection_name=collection_name)
@@ -105,9 +110,10 @@ def get_embedding_model_name(client: QdrantClient, collection_name: str) -> str:
 
 def get_embedding_model(model_name: str) -> Embeddings:
     """Initialize the embedding client against the LLM Lab OpenAI-compatible API.
-    The Qdrant-side vector_name (e.g. 'Qwen/Qwen3-Embedding-8B') is translated
+    The Qdrant-side model_name (e.g. 'Qwen/Qwen3-Embedding-8B') is translated
     into the API slug (e.g. 'qwen3-embedding-8b'); EMBEDDING_MODEL_API_NAME
     overrides this translation if the heuristic does not fit a given provider."""
+    
     api_model = os.getenv("EMBEDDING_MODEL_API_NAME") or _vector_to_api_model(model_name)
     if api_model != model_name:
         logger.info(
@@ -126,13 +132,20 @@ def create_vector_db(
     docs: Iterable[Mapping],
     embedding_model: Embeddings,
     collection_name: str,
+    model_name: str,
+    overwrite: bool = True,
 ) -> VectorDB:
-    """Embed the provided docs and upsert them into a Qdrant collection that
+    """
+    Embed the provided docs and upsert them into a Qdrant collection that
     holds a single named vector. Each doc must be a mapping with
-    'page_content' (str) and 'metadata' (dict) keys."""
+    'page_content' (str) and 'metadata' (dict) keys. `model_name` is the
+    Qdrant named-vector key (e.g. 'Qwen/Qwen3-Embedding-8B').
+    When `overwrite=True` (default), any existing collection with the same
+    name is dropped before being recreated.
+    """
+
     logger.info("🧠 Creating Qdrant vector DB with embeddings")
     client = get_qdrant_client()
-    vector_name = os.getenv("EMBEDDING_MODEL")
 
     docs = list(docs)
     texts = [d["page_content"] for d in docs]
@@ -140,12 +153,16 @@ def create_vector_db(
     vectors = embedding_model.embed_documents(texts)
     dim = len(vectors[0])
 
+    if overwrite and client.collection_exists(collection_name=collection_name):
+        client.delete_collection(collection_name=collection_name)
+        logger.info(f"Collection '{collection_name}' existed and was dropped (overwrite=True).")
+
     try:
         client.create_collection(
             collection_name=collection_name,
-            vectors_config={vector_name: qm.VectorParams(size=dim, distance=qm.Distance.COSINE)},
+            vectors_config={model_name: qm.VectorParams(size=dim, distance=qm.Distance.COSINE)},
         )
-        logger.info(f"Collection '{collection_name}' created (dim={dim}, vector='{vector_name}').")
+        logger.info(f"Collection '{collection_name}' created (dim={dim}, vector='{model_name}').")
     except UnexpectedResponse as e:
         if e.status_code == 409:
             logger.info(f"Collection '{collection_name}' already exists — reusing it.")
@@ -155,24 +172,27 @@ def create_vector_db(
     points = [
         qm.PointStruct(
             id=i,
-            vector={vector_name: vec},
+            vector={model_name: vec},
             payload={"page_content": text, "metadata": meta},
         )
         for i, (text, meta, vec) in enumerate(zip(texts, metadatas, vectors))
     ]
-    for start in range(0, len(points), UPSERT_BATCH_SIZE):
-        client.upsert(collection_name=collection_name, points=points[start : start + UPSERT_BATCH_SIZE])
+    with tqdm(total=len(points), desc="Upserting points", unit="point") as pbar:
+        for start in range(0, len(points), UPSERT_BATCH_SIZE):
+            batch = points[start : start + UPSERT_BATCH_SIZE]
+            client.upsert(collection_name=collection_name, points=batch)
+            pbar.update(len(batch))
     logger.info(f"Upserted {len(points)} points into '{collection_name}'.")
 
-    return VectorDB(client, embedding_model, vector_name, collection_name)
+    return VectorDB(client, embedding_model, model_name, collection_name)
 
 
 def get_vector_db(collection_name: str) -> VectorDB:
     """Build a VectorDB handle over an existing Qdrant collection."""
     client = get_qdrant_client()
-    vector_name = get_embedding_model_name(client, collection_name)
-    embeddings = get_embedding_model(vector_name)
-    return VectorDB(client, embeddings, vector_name, collection_name)
+    model_name = get_collection_model_name(client, collection_name)
+    embeddings = get_embedding_model(model_name)
+    return VectorDB(client, embeddings, model_name, collection_name)
 
 
 def get_retriever(collection_name: str) -> VectorDB:
