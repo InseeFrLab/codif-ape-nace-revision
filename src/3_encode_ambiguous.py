@@ -207,7 +207,7 @@ if __name__ == "__main__":
     parser.add_argument("--experiment_name", type=str, default="Test")
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--collection_name", type=str, default=None)
-    parser.add_argument("--llm_name", type=str, default="Qwen/Qwen3-0.6B")
+    parser.add_argument("--llm_name", type=str, choices=["qwen3-6-35b-moe", "gemma4-26b-moe"])
     parser.add_argument("--third", type=int, default=None)
     parser.add_argument("--prompts_from_file", action="store_true")
     parser.add_argument("--save_prompts", action="store_true")
