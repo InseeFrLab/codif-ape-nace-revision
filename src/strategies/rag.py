@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from math import ceil
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -9,7 +8,7 @@ from pydantic import BaseModel, Field
 from qdrant_client.http.models import NamedVector, ScoredPoint, SearchRequest
 from tqdm.asyncio import tqdm
 
-from constants.llm import MAX_NEW_TOKEN, TEMPERATURE
+from constants.llm import MAX_NEW_TOKEN_FAST, MAX_NEW_TOKEN_THINKING, TEMPERATURE
 from constants.paths import URL_PROMPTS_RAG, URL_SIRENE4_AMBIGUOUS_RAG
 from utils.data import get_file_system, load_prompts, prompts_to_df
 from vector_db.loading import get_retriever
@@ -44,6 +43,8 @@ class RAGStrategy(EncodeStrategy):
         generation_model: str = "gemma4-31b",
         prompt_name: str = "rag-classifier",
         prompt_label: str = "production",
+        thinking: bool = False,
+        max_new_tokens: Optional[int] = None,
     ):
         super().__init__(generation_model)
         self.response_format = RAGResponse
@@ -54,10 +55,15 @@ class RAGStrategy(EncodeStrategy):
         self.prompt_label = prompt_label
         self.prompt_template = Langfuse().get_prompt(self.prompt_name, label=self.prompt_label)
         self.prompt_template_retriever = Langfuse().get_prompt("retriever", label="production")
+
+        if max_new_tokens is None:
+            max_new_tokens = MAX_NEW_TOKEN_THINKING if thinking else MAX_NEW_TOKEN_FAST
+        self.thinking = thinking
         self.sampling_params = {
-            "max_tokens": MAX_NEW_TOKEN,
+            "max_tokens": max_new_tokens,
             "temperature": TEMPERATURE,
             "seed": 2025,
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": thinking}},
         }
 
     async def get_prompts(
@@ -154,18 +160,18 @@ class RAGStrategy(EncodeStrategy):
         ]
 
         results = []
-        num_chunks = ceil(len(search_requests) / batch_size)
-        for chunk in tqdm(
-            self._chunked(search_requests, batch_size),
-            total=num_chunks,
+        with tqdm(
+            total=len(search_requests),
             desc="Processing Qdrant requests",
-            unit="batch",
-        ):
-            res = self.db.client.search_batch(
-                collection_name=self.collection_name,
-                requests=chunk,
-            )
-            results.extend(res)
+            unit="doc",
+        ) as pbar:
+            for chunk in self._chunked(search_requests, batch_size):
+                res = self.db.client.search_batch(
+                    collection_name=self.collection_name,
+                    requests=chunk,
+                )
+                results.extend(res)
+                pbar.update(len(chunk))
 
         return results
 

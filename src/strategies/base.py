@@ -57,6 +57,7 @@ class EncodeStrategy(ABC):
 
         self.response_format: Optional[BaseModel] = None
         self.sampling_params: Dict[str, Any] = {}
+        self.token_stats: Dict[str, float] = {}
 
     @abstractmethod
     def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
@@ -161,11 +162,41 @@ class EncodeStrategy(ABC):
             logger.error("LLM call %d failed: %s", idx, exc)
         logger.info("LLM generation: %d ok, %d failed", len(results) - len(failed), len(failed))
 
+        self.token_stats = self._compute_token_stats(results)
+
         if error_policy == "raise" and failed:
             raise failed[0][1]
         if error_policy == "store_none":
             results = [None if isinstance(r, BaseException) else r for r in results]
         return results
+
+    def _compute_token_stats(self, results: List[Any]) -> Dict[str, float]:
+        """Aggregate completion/prompt token counts across the successful calls
+        and log a one-line summary. Stats are based only on responses that came
+        back (truncated/errored calls are not represented since their usage is
+        not available via the SDK's ParsedChatCompletion)."""
+        usages = [r.usage for r in results if hasattr(r, "usage") and r.usage is not None]
+        if not usages:
+            return {}
+
+        completion = [u.completion_tokens for u in usages]
+        prompt = [u.prompt_tokens for u in usages]
+        stats = {
+            "completion_tokens_mean": sum(completion) / len(completion),
+            "completion_tokens_max":  max(completion),
+            "completion_tokens_min":  min(completion),
+            "prompt_tokens_mean":     sum(prompt) / len(prompt),
+            "prompt_tokens_max":      max(prompt),
+            "prompt_tokens_min":      min(prompt),
+        }
+        logger.info(
+            "Token usage over %d successful calls — "
+            "completion: mean=%.1f, max=%d, min=%d | prompt: mean=%.1f, max=%d, min=%d",
+            len(usages),
+            stats["completion_tokens_mean"], stats["completion_tokens_max"], stats["completion_tokens_min"],
+            stats["prompt_tokens_mean"],     stats["prompt_tokens_max"],     stats["prompt_tokens_min"],
+        )
+        return stats
 
     def _process_output(self, response: Union[ParsedChatCompletion, BaseException, None]) -> BaseModel:
         """Extract the parsed BaseModel from a ParsedChatCompletion and attach a confidence."""

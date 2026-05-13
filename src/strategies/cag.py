@@ -7,7 +7,7 @@ from langfuse import Langfuse
 from pydantic import BaseModel, Field
 from tqdm.asyncio import tqdm
 
-from constants.llm import MAX_NEW_TOKEN, TEMPERATURE
+from constants.llm import MAX_NEW_TOKEN_FAST, MAX_NEW_TOKEN_THINKING, TEMPERATURE
 from constants.paths import URL_PROMPTS_CAG, URL_SIRENE4_AMBIGUOUS_CAG
 from utils.data import get_file_system, prompts_to_df
 
@@ -45,14 +45,21 @@ class CAGStrategy(EncodeStrategy):
         generation_model: str = "gemma4-31b",
         prompt_name: str = "cag-classifier",
         prompt_label: str = "production",
+        thinking: bool = False,
+        max_new_tokens: Optional[int] = None,
     ):
         super().__init__(generation_model)
         self.response_format = CAGResponse
         self.prompt_template = Langfuse().get_prompt(prompt_name, label=prompt_label)
+
+        if max_new_tokens is None:
+            max_new_tokens = MAX_NEW_TOKEN_THINKING if thinking else MAX_NEW_TOKEN_FAST
+        self.thinking = thinking
         self.sampling_params = {
-            "max_tokens": MAX_NEW_TOKEN,
+            "max_tokens": max_new_tokens,
             "temperature": TEMPERATURE,
             "seed": 2025,
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": thinking}},
         }
         self.prompt_name = prompt_name
         self.prompt_label = prompt_label

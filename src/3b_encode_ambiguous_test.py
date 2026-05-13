@@ -35,12 +35,11 @@ llm_name           = "gemma4-26b-moe"
 third              = None
 prompts_from_file  = False
 save_prompts       = False
-prompt_name        = "cag-classifier"   # "rag-classifier" for RAG
+prompt_name        = "rag-classifier"   # "rag-classifier" for RAG
 prompt_label       = "production"
 top_k              = 5               # None for CAG, e.g. 5 for RAG
 sample_size        = 50
 only_annotated     = True
-batch_size         = 512
 
 
 # =============================================================================
