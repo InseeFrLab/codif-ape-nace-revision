@@ -77,7 +77,8 @@ class CAGStrategy(EncodeStrategy):
     @property
     def output_path(self):
         date = datetime.now().strftime("%Y-%m-%d--%H:%M")
-        return f"{URL_SIRENE4_AMBIGUOUS_CAG}/{self.generation_model}/part-{{i}}-{{third}}--{date}.parquet"
+        model_dir = f"{self.generation_model}-thinking" if self.thinking else self.generation_model
+        return f"{URL_SIRENE4_AMBIGUOUS_CAG}/{model_dir}/part-{{i}}-{{third}}--{date}.parquet"
 
     def postprocess_results(self, df):
         # Apply the base postprocessing first

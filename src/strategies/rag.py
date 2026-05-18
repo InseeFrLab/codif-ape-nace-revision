@@ -212,10 +212,13 @@ class RAGStrategy(EncodeStrategy):
     def output_path(self) -> str:
         """
         Returns a Parquet output path template including model name and timestamp.
+        Thinking runs are stored under a `<model>-thinking` folder to avoid
+        collisions with non-thinking runs of the same base model.
         Placeholders {i} and {third} must be filled later.
         """
         date = datetime.now().strftime("%Y-%m-%d--%H:%M")
-        return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{self.generation_model}/part-{{i}}-{{third}}--{date}.parquet"
+        model_dir = f"{self.generation_model}-thinking" if self.thinking else self.generation_model
+        return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{model_dir}/part-{{i}}-{{third}}--{date}.parquet"
 
     def _format_documents(self, docs: List[ScoredPoint]) -> Tuple[str, str]:
         """
