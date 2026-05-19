@@ -80,7 +80,7 @@ def build_retriever_errors_report(
         lines.append("_No matching cases in this run._")
         return "\n".join(lines)
 
-    for i, row in enumerate(missing.sample(n=max_examples).itertuples(), start=1):
+    for i, row in enumerate(missing.sample(n=min(max_examples, len(missing))).itertuples(), start=1):
         prompt_idx = liasse_to_idx.get(row.liasse_numero)
         lines += [
             f"## Example {i}",
@@ -121,7 +121,7 @@ def build_llm_errors_report(
         lines.append("_No matching cases in this run._")
         return "\n".join(lines)
 
-    for i, row in enumerate(wrong.sample(n=max_examples).itertuples(), start=1):
+    for i, row in enumerate(wrong.sample(n=min(max_examples, len(wrong))).itertuples(), start=1):
         prompt_idx = liasse_to_idx.get(row.liasse_numero)
         position_str = (
             f" (rank in proposed list: {int(row.position) + 1})"
@@ -163,7 +163,7 @@ def build_not_codable_report(
         lines.append("_No matching cases in this run._")
         return "\n".join(lines)
 
-    for i, row in enumerate(not_codable.sample(n=max_examples).itertuples(), start=1):
+    for i, row in enumerate(not_codable.sample(n=min(max_examples, len(not_codable))).itertuples(), start=1):
         prompt_idx = liasse_to_idx.get(row.liasse_numero)
         lines += [
             f"## Example {i}",

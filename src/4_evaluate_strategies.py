@@ -1,44 +1,39 @@
 """
 Evaluate and combine LLM predictions for ambiguous NAF codes.
 
-For each LLM listed in `MODELS`, this script:
-  1. Loads the parquet of predictions produced by `3_encode_ambiguous.py`.
-  2. Aligns predictions across models on `liasse_numero`.
-  3. Combines them with three ensemble strategies
-     (cascade, voting, weighted voting).
+This script:
+  1. Fetches the 3 MLflow runs listed in `RUN_IDS` and reads their
+     `output_path` param to locate each model's predictions parquet.
+  2. Loads each parquet and aligns predictions across models on
+     `liasse_numero`.
+  3. Combines them with the majority-voting ensemble strategy.
   4. Compares individual and ensemble predictions against the manual
      ground truth, both raw and filtered (codable, mapping_ok).
-  5. Picks the strategy with the highest level-5 accuracy and exports
-     its predictions as the final NAF2025 file.
-
-------------------------------------------------------------------
-Open questions before running (search for "TODO" in this file):
-  - S3 path of the new gemma4-26b-moe (normal + thinking) parquets
-  - S3 path of the new qwen3-6-35b-moe parquet
-  - Cascade order to assign to the new models (model priority)
-  - Vote weights to assign to the new models
-  - Whether to keep the 3 legacy models or replace them
-  - Whether to actually write the final parquet (toggle EXPORT_FINAL)
-------------------------------------------------------------------
+  5. Exports the voting predictions as the final NAF2025 file.
 """
 
 import logging
+import os
+# os.chdir("codif-ape-nace-revision/src")
 from datetime import datetime
 from typing import Dict, List, Tuple
 
+import mlflow
 import pandas as pd
 import pyarrow.parquet as pq
 
+import config
 from constants.paths import URL_GROUND_TRUTH, URL_SIRENE4_AMBIGUOUS_FINAL
 from utils.data import fetch_mapping, get_file_system, merge_dataframes
+from utils.ensemble_report import build_ensemble_report
 from utils.strategies import (
     compute_accuracies,
     generate_model_names,
     get_model_agreement_stats,
-    select_labels_cascade,
     select_labels_voting,
-    select_labels_weighted_voting,
 )
+
+config.setup()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -50,63 +45,56 @@ logger = logging.getLogger(__name__)
 
 VAR_TO_KEEP = ["liasse_numero", "nace2025", "codable"]
 LEVELS = [5, 4, 3, 2, 1]
-ENSEMBLE_METHODS = ["cascade_label", "voting_label", "weighted_voting_label"]
+ENSEMBLE_METHODS = ["voting_label"]
 
 # Toggle to True once accuracies have been reviewed and the final
 # parquet should be written to S3.
 EXPORT_FINAL = False
 
-# Each entry describes one LLM run produced by `3_encode_ambiguous.py`.
-#   - path          : S3 path of the parquet of predictions.
-#   - weight        : vote weight for the weighted-voting ensemble.
-#   - cascade_order : model priority for the cascade strategy (1 = first).
-#
-# Use distinct keys when the same base model runs in different modes
-# (e.g. with vs without thinking) so that prediction columns do not collide.
-MODELS: Dict[str, Dict] = {
-    # ---- Legacy models -----------------------------------------------------
-    # TODO: confirm whether these three models should be kept alongside the
-    # new ones, or replaced. Drop the entries that are no longer needed.
-    "Mistral-Small-3.2-24B-Instruct-2506": {
-        "weight": 1,
-        "cascade_order": 1,
-        "path": "s3://projet-ape/NAF-revision/relabeled-data-cag/mistralai/Mistral-Small-3.2-24B-Instruct-2506/part-0---2025-11-28--21:30.parquet",
-    },
-    "DeepSeek-R1-Distill-Qwen-32B": {
-        "weight": 1,
-        "cascade_order": 2,
-        "path": "s3://projet-ape/NAF-revision/relabeled-data-cag/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B/part-0---2025-11-28--19:08.parquet",
-    },
-    "Qwen3-32B": {
-        "weight": 1,
-        "cascade_order": 3,
-        "path": "s3://projet-ape/NAF-revision/relabeled-data-cag/Qwen/Qwen3-32B/part-0---2025-11-28--14:59.parquet",
-    },
-    # ---- New models --------------------------------------------------------
-    # TODO: fill in the parquet paths once `3_encode_ambiguous.py` has been
-    # rerun with these new LLMs, and set `weight` / `cascade_order` after
-    # reviewing individual-model accuracies.
-    "gemma4-26b-moe": {
-        "weight": 1,                # TODO: weight to confirm
-        "cascade_order": 4,         # TODO: cascade order to confirm
-        "path": "TODO_S3_PATH",     # TODO: fill with the actual parquet path
-    },
-    "gemma4-26b-moe-thinking": {
-        "weight": 1,                # TODO: weight to confirm
-        "cascade_order": 5,         # TODO: cascade order to confirm
-        "path": "TODO_S3_PATH",     # TODO: fill with the actual parquet path
-    },
-    "qwen3-6-35b-moe": {
-        "weight": 1,                # TODO: weight to confirm
-        "cascade_order": 6,         # TODO: cascade order to confirm
-        "path": "TODO_S3_PATH",     # TODO: fill with the actual parquet path
-    },
-}
+# MLflow run IDs of the 3 models to combine. Each run logs an `output_path`
+# param pointing to the predictions parquet on S3 (see `3_encode_ambiguous.py`).
+RUN_IDS: List[str] = [
+    "d230d79c0387495c90413e4671f67a66",
+    "96033a8398784a04b916a58962f93b95",
+    "23ddbe5db64545d985d7477ce7b118af",
+]
 
 
 # ============================================================================
 # Pipeline steps
 # ============================================================================
+
+def fetch_models_from_mlflow(run_ids: List[str]) -> Dict[str, Dict]:
+    """Resolve each run_id to its LLM name and predictions parquet path.
+
+    Two runs of the same `LLM_MODEL` (e.g. qwen3 with and without thinking)
+    are disambiguated by appending a `-thinking` suffix to the key.
+    """
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+
+    models: Dict[str, Dict] = {}
+    for run_id in run_ids:
+        run = mlflow.get_run(run_id)
+        params = run.data.params
+        # MLflow stores params as strings — handle the bool literal.
+        thinking = str(params.get("THINKING", "False")).lower() == "true"
+        llm_name = params.get("LLM_MODEL", run_id)
+        key = f"{llm_name}-thinking" if thinking else llm_name
+        if key in models:
+            raise ValueError(
+                f"Duplicate model key '{key}' across runs "
+                f"({models[key]['run_id']} and {run_id}). "
+                "Two runs share the same LLM_MODEL/THINKING combination."
+            )
+        models[key] = {
+            "run_id": run_id,
+            "path": params["output_path"],
+            "llm_model": llm_name,
+            "thinking": thinking,
+        }
+        logger.info("Resolved run %s -> %s (%s)", run_id, key, params["output_path"])
+    return models
+
 
 def load_predictions(models: Dict[str, Dict], fs) -> Dict[str, pd.DataFrame]:
     """Load each model's parquet and keep only the `liasse_numero` shared by all."""
@@ -127,18 +115,9 @@ def load_predictions(models: Dict[str, Dict], fs) -> Dict[str, pd.DataFrame]:
 def apply_ensemble_strategies(
     merged_df: pd.DataFrame, models: Dict[str, Dict]
 ) -> Tuple[pd.DataFrame, List[str]]:
-    """Add cascade / voting / weighted-voting columns to `merged_df`."""
-    model_columns = [
-        f"nace2025_{name}"
-        for name in sorted(models, key=lambda n: models[n]["cascade_order"])
-    ]
-    weights = {f"nace2025_{name}": cfg["weight"] for name, cfg in models.items()}
-
-    merged_df["nace2025_cascade_label"] = select_labels_cascade(merged_df, model_columns)
+    """Add the majority-voting column to `merged_df`."""
+    model_columns = [f"nace2025_{name}" for name in models]
     merged_df["nace2025_voting_label"] = select_labels_voting(merged_df, model_columns)
-    merged_df["nace2025_weighted_voting_label"] = select_labels_weighted_voting(
-        merged_df, model_columns, weights
-    )
     return merged_df, model_columns
 
 
@@ -193,19 +172,10 @@ def compute_all_accuracies(
     return {"raw": raw, "codable": codable, "mapping_ok": mapping_ok}
 
 
-def pick_best_strategy(raw_accuracies: Dict[str, float]) -> str:
-    """Return the model/strategy name with the highest level-5 accuracy."""
-    lvl5 = {k: v for k, v in raw_accuracies.items() if k.endswith("lvl_5")}
-    best = max(lvl5, key=lvl5.get)
-    return best.replace("accuracy_", "").replace("_lvl_5", "")
-
-
-def export_final_predictions(
-    merged_df: pd.DataFrame, best_strategy: str, fs
-) -> str:
-    """Write the predictions of the best strategy to S3 and return the output path."""
-    final_df = merged_df[["liasse_numero", f"nace2025_{best_strategy}"]].rename(
-        columns={f"nace2025_{best_strategy}": "nace2025"}
+def export_final_predictions(merged_df: pd.DataFrame, fs) -> str:
+    """Write the majority-voting predictions to S3 and return the output path."""
+    final_df = merged_df[["liasse_numero", "nace2025_voting_label"]].rename(
+        columns={"nace2025_voting_label": "nace2025"}
     )
     timestamp = datetime.now().strftime("%Y%m%d")
     output_path = f"{URL_SIRENE4_AMBIGUOUS_FINAL}{timestamp}_sirene4_ambiguous.parquet"
@@ -225,11 +195,26 @@ def export_final_predictions(
 # Main
 # ============================================================================
 
+def write_report(report_md: str) -> str:
+    """Write the Markdown report next to the script and return its local path."""
+    reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = os.path.join(reports_dir, f"ensemble_report_{timestamp}.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(report_md)
+    logger.info("Ensemble report written to %s", path)
+    return path
+
+
 def main() -> None:
     fs = get_file_system()
 
-    logger.info("Loading predictions from %d model(s)", len(MODELS))
-    dfs = load_predictions(MODELS, fs)
+    logger.info("Fetching %d run(s) from MLflow", len(RUN_IDS))
+    models = fetch_models_from_mlflow(RUN_IDS)
+
+    logger.info("Loading predictions from %d model(s)", len(models))
+    dfs = load_predictions(models, fs)
 
     merged_df = merge_dataframes(
         dfs,
@@ -237,13 +222,13 @@ def main() -> None:
         var_to_keep=VAR_TO_KEEP,
         columns_to_rename={"nace2025": "nace2025_{key}", "codable": "codable_{key}"},
     )
-    merged_df, model_columns = apply_ensemble_strategies(merged_df, MODELS)
+    merged_df, model_columns = apply_ensemble_strategies(merged_df, models)
 
     logger.info("Loading ground truth")
     eval_df = merged_df.merge(load_ground_truth(fs), on="liasse_numero", how="inner")
 
     logger.info("Computing accuracies")
-    accuracies = compute_all_accuracies(eval_df, list(MODELS))
+    accuracies = compute_all_accuracies(eval_df, list(models))
     agreement = get_model_agreement_stats(eval_df, model_columns)
 
     logger.info("Raw accuracies: %s", accuracies["raw"])
@@ -251,10 +236,19 @@ def main() -> None:
     logger.info("Mapping-ok accuracies: %s", accuracies["mapping_ok"])
     logger.info("Model agreement statistics: %s", agreement)
 
-    best_strategy = pick_best_strategy(accuracies["raw"])
-    logger.info("Best strategy at level 5: %s", best_strategy)
+    final_output_path = export_final_predictions(merged_df, fs)
 
-    export_final_predictions(merged_df, best_strategy, fs)
+    report_md = build_ensemble_report(
+        models=models,
+        accuracies=accuracies,
+        agreement=agreement,
+        levels=LEVELS,
+        ensemble_methods=ENSEMBLE_METHODS,
+        eval_size=len(eval_df),
+        final_output_path=final_output_path,
+        export_final=EXPORT_FINAL,
+    )
+    write_report(report_md)
 
 
 if __name__ == "__main__":

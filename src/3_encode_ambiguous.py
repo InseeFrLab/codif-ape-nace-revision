@@ -171,9 +171,6 @@ def _log_mlflow(
         df_eval=df_eval,
     )
     error_reports = {
-        "retriever_errors.md": build_retriever_errors_report(
-            strategy, prompts, results, df_eval, max_examples=5, run_name=run_name,
-        ),
         "llm_errors.md": build_llm_errors_report(
             strategy, prompts, results, df_eval, max_examples=5, run_name=run_name,
         ),
@@ -181,6 +178,11 @@ def _log_mlflow(
             strategy, prompts, results, df_eval, max_examples=5, run_name=run_name,
         ),
     }
+    # Retriever errors only make sense for RAG (CAG has no retrieval step).
+    if hasattr(strategy, "db"):
+        error_reports["retriever_errors.md"] = build_retriever_errors_report(
+            strategy, prompts, results, df_eval, max_examples=5, run_name=run_name,
+        )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         df_path = os.path.join(tmpdir, "df_eval.csv")
