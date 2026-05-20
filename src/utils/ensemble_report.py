@@ -1,4 +1,4 @@
-"""Markdown report for the ensemble evaluation (`4_evaluate_strategies.py`).
+"""Markdown report for the ensemble evaluation (`4_ensemble_predictions.py`).
 
 Summarises individual-model and majority-voting accuracies at each NACE level,
 plus agreement statistics across the runs."""
