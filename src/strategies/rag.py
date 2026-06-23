@@ -1,24 +1,16 @@
-import asyncio
 import logging
 from datetime import datetime
-from math import ceil
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
-from langchain.schema import Document
 from langfuse import Langfuse
-from pydantic import BaseModel, Field, model_validator
-from qdrant_client.http.models import NamedVector, SearchRequest
+from pydantic import BaseModel, Field
+from qdrant_client.http.models import NamedVector, ScoredPoint, SearchRequest
 from tqdm.asyncio import tqdm
-from vllm.sampling_params import GuidedDecodingParams, SamplingParams
-from vllm import LLM
-from constants.llm import (
-    MAX_NEW_TOKEN,
-    TEMPERATURE,
-)
-from constants.paths import URL_SIRENE4_AMBIGUOUS_RAG, URL_PROMPTS_RAG
-from constants.vector_db import MAX_CONCURRENCY
-from utils.data import load_prompts
+
+from constants.llm import MAX_NEW_TOKEN_FAST, MAX_NEW_TOKEN_THINKING, TEMPERATURE
+from constants.paths import URL_PROMPTS_RAG, URL_SIRENE4_AMBIGUOUS_RAG
+from utils.data import get_file_system, load_prompts, prompts_to_df
 from vector_db.loading import get_retriever
 
 from .base import EncodeStrategy
@@ -43,51 +35,36 @@ class RAGResponse(BaseModel):
         default=0.0,
     )
 
-    @model_validator(mode="after")
-    def check_nace2025_if_codable(self) -> BaseModel:
-        if self.codable and not self.nace2025:
-            raise ValueError("If codable=True, then nace2025 must not be None or empty.")
-        return self
-
 
 class RAGStrategy(EncodeStrategy):
     def __init__(
         self,
         collection_name: str,
-        generation_model: str = "Qwen/Qwen2.5-0.5B",
+        generation_model: str = "gemma4-31b",
         prompt_name: str = "rag-classifier",
         prompt_label: str = "production",
-        reranker_model: str = None,
-        use_reranker: bool = True,
+        thinking: bool = False,
+        max_new_tokens: Optional[int] = None,
     ):
         super().__init__(generation_model)
         self.response_format = RAGResponse
-        self.reranker_model = reranker_model
-        if self.reranker_model:
-            self.reranker = LLM(
-                model=self.reranker_model,
-                task="score",
-                hf_overrides={
-                    "architectures": ["Qwen3ForSequenceClassification"],
-                    "classifier_from_token": ["no", "yes"],
-                    "is_original_qwen3_reranker": True,
-                },
-            )
 
         self.collection_name = collection_name
-        self.db = get_retriever(collection_name, self.reranker_model)
+        self.db = get_retriever(collection_name)
         self.prompt_name = prompt_name
         self.prompt_label = prompt_label
         self.prompt_template = Langfuse().get_prompt(self.prompt_name, label=self.prompt_label)
         self.prompt_template_retriever = Langfuse().get_prompt("retriever", label="production")
-        self.sampling_params = SamplingParams(
-            max_tokens=MAX_NEW_TOKEN,
-            temperature=TEMPERATURE,
-            seed=2025,
-            logprobs=1,
-            guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
-        )
-        self.semaphore = asyncio.Semaphore(MAX_CONCURRENCY)  # Max concurrency for API calls
+
+        if max_new_tokens is None:
+            max_new_tokens = MAX_NEW_TOKEN_THINKING if thinking else MAX_NEW_TOKEN_FAST
+        self.thinking = thinking
+        self.sampling_params = {
+            "max_tokens": max_new_tokens,
+            "temperature": TEMPERATURE,
+            "seed": 2025,
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": thinking}},
+        }
 
     async def get_prompts(
         self,
@@ -122,7 +99,7 @@ class RAGStrategy(EncodeStrategy):
         embeddings = await self.db.embeddings.aembed_documents(queries)
 
         # Batch search in Qdrant
-        results = self._search_qdrant(embeddings, top_k, batch_size, use_reranker)
+        results = self._search_qdrant(embeddings, top_k, batch_size)
 
         # Build prompts from retrieved docs
         prompts = self._build_prompts(activities, results)
@@ -133,19 +110,18 @@ class RAGStrategy(EncodeStrategy):
         return prompts
 
     def _save_prompts(
+        self,
         prompts: List[List[Dict]],
     ) -> None:
-        """Save prompts to a Parquet file.
-
-        Args:
-            prompts: List of conversations to save
-            prompt_name: Name of the Langfuse prompt
-            prompt_label: Label for the Langfuse prompt
-        """
+        """Save prompts to a Parquet file."""
         fs = get_file_system()
         prompts_df: pd.DataFrame = prompts_to_df(prompts)
         prompts_df.to_parquet(
-            URL_PROMPTS_RAG.format(collection=self.collection, prompt_name=self.prompt_name, prompt_label=self.prompt_label),
+            URL_PROMPTS_RAG.format(
+                collection=self.collection_name,
+                prompt_name=self.prompt_name,
+                prompt_label=self.prompt_label,
+            ),
             filesystem=fs,
         )
 
@@ -172,49 +148,30 @@ class RAGStrategy(EncodeStrategy):
         embeddings: List[List[float]],
         top_k: int,
         batch_size: int,
-        use_reranker: bool,
     ):
-        """
-        Run batched search requests in Qdrant.
-
-        Args:
-            embeddings (List[List[float]]): List of embedding vectors.
-            top_k (int): Number of results per query.
-            batch_size (int): Number of queries per request batch.
-
-        Returns:
-            List[List[ScoredPoint]]: Search results grouped by query.
-        """
+        """Run batched search requests in Qdrant."""
         search_requests = [
             SearchRequest(
-                vector=NamedVector(name=self.db.vector_name, vector=vec),
-                limit=35 if use_reranker else top_k,
+                vector=NamedVector(name=self.db.model_name, vector=vec),
+                limit=top_k,
                 with_payload=True,
             )
             for vec in embeddings
         ]
 
-        # init reranker  A SUPPRIMER
-        if use_reranker:
-            reranker = get_reranker(
-                self.db,
-                reranker_name=self.reranker_model,
-                k=35
-            )
-
         results = []
-        num_chunks = ceil(len(search_requests) / batch_size)
-        for chunk in tqdm(
-            self._chunked(search_requests, batch_size),
-            total=num_chunks,
+        with tqdm(
+            total=len(search_requests),
             desc="Processing Qdrant requests",
-            unit="batch",
-        ):
-            res = self.db.client.search_batch(
-                collection_name=self.collection_name,
-                requests=chunk,
-            )
-            results.extend(res)
+            unit="doc",
+        ) as pbar:
+            for chunk in self._chunked(search_requests, batch_size):
+                res = self.db.client.search_batch(
+                    collection_name=self.collection_name,
+                    requests=chunk,
+                )
+                results.extend(res)
+                pbar.update(len(chunk))
 
         return results
 
@@ -235,14 +192,7 @@ class RAGStrategy(EncodeStrategy):
         """
         prompts: List[List[Dict]] = []
         for activity, docs in zip(activities, results):
-            langchain_docs = [
-                Document(
-                    page_content=d.payload["page_content"],
-                    metadata=d.payload.get("metadata", {}),
-                )
-                for d in docs
-            ]
-            proposed_codes, list_codes = self._format_documents(langchain_docs)
+            proposed_codes, list_codes = self._format_documents(docs)
 
             convo: List[Dict] = self.prompt_template.compile(
                 activity=activity,
@@ -262,23 +212,27 @@ class RAGStrategy(EncodeStrategy):
     def output_path(self) -> str:
         """
         Returns a Parquet output path template including model name and timestamp.
+        Thinking runs are stored under a `<model>-thinking` folder to avoid
+        collisions with non-thinking runs of the same base model.
         Placeholders {i} and {third} must be filled later.
         """
         date = datetime.now().strftime("%Y-%m-%d--%H:%M")
-        return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{self.generation_model}/part-{{i}}-{{third}}--{date}.parquet"
+        model_dir = f"{self.generation_model}-thinking" if self.thinking else self.generation_model
+        return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{model_dir}/part-{{i}}-{{third}}--{date}.parquet"
 
-    def _format_documents(self, docs: List[Document]) -> Tuple[str, str]:
+    def _format_documents(self, docs: List[ScoredPoint]) -> Tuple[str, str]:
         """
-        Formats retrieved documents into two string representations.
+        Formats retrieved Qdrant points into two string representations.
 
         Args:
-            docs: A list of LangChain Document objects with metadata.
+            docs: A list of Qdrant ScoredPoint objects whose payload holds
+                  'page_content' (str) and 'metadata' (dict with a 'code' key).
 
         Returns:
             A tuple of:
                 - A formatted string containing document content blocks.
                 - A comma-separated list of classification codes.
         """
-        proposed_codes = "\n\n".join(f"========\n{doc.page_content}" for doc in docs)
-        list_codes = ", ".join(f"'{doc.metadata['code']}'" for doc in docs)
+        proposed_codes = "\n\n".join(f"========\n{d.payload['page_content']}" for d in docs)
+        list_codes = ", ".join(f"'{d.payload['metadata']['code']}'" for d in docs)
         return proposed_codes, list_codes

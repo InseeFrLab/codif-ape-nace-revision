@@ -7,7 +7,7 @@ def setup_logging(log_file="encode_ambiguous.log"):
     Configure logging pour logger à la fois dans un fichier et dans la console.
     """
     logger = logging.getLogger()  # Logger racine
-    logger.setLevel(logging.DEBUG)  # Tout log, du DEBUG au CRITICAL
+    logger.setLevel(logging.WARNING)  #logging.DEBUG
 
     # --- Handler pour le fichier ---
     file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
@@ -29,5 +29,11 @@ def setup_logging(log_file="encode_ambiguous.log"):
 
     # Évite que le logger racine duplique les messages si setup_logging est rappelé
     logger.propagate = False
+
+    # for noisy_logger in (
+    #     "botocore", "s3fs", "aiobotocore", "urllib3",
+    #     "openai", "httpx", "httpcore",
+    # ):
+    #     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
     return logger

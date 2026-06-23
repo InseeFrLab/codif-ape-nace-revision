@@ -27,8 +27,20 @@ class Evaluator:
         ground_truth = get_ground_truth()
         ground_truth = ground_truth[ground_truth["liasse_numero"].isin(results["liasse_numero"])]
 
+        if ground_truth.empty:
+            raise ValueError(
+                "No annotated rows found in the results sample. "
+                "Either run the pipeline with only_annotated=True so the sample is drawn from "
+                "annotated rows only, or increase sample_size to improve overlap with ground truth."
+            )
+
         # Step 2: Map prompts
-        prompt_mapping = self.get_prompt_mapping(prompts, ground_truth)
+        # `prompts` is index-aligned with `results` (and with `data`), but
+        # `ground_truth` comes back from get_ground_truth() filtered by isin
+        # — its row order is independent. Build a liasse→prompt-index map so
+        # get_prompt_mapping can look up the right prompt for each ground-truth row.
+        liasse_to_idx = {ln: i for i, ln in enumerate(results["liasse_numero"].tolist())}
+        prompt_mapping = self.get_prompt_mapping(prompts, ground_truth, liasse_to_idx)
 
         # Step 3: Merge prompt mapping
         ground_truth = ground_truth.merge(prompt_mapping, on="liasse_numero", how="inner")
@@ -54,29 +66,35 @@ class Evaluator:
         )
         return metrics, eval_df
 
-    def get_prompt_mapping(self, prompts: List, ground_truth: pd.DataFrame) -> pd.DataFrame:
+    def get_prompt_mapping(
+        self, prompts: List, ground_truth: pd.DataFrame, liasse_to_idx: Dict[str, int],
+    ) -> pd.DataFrame:
         """
-        Processes prompts and returns a DataFrame with liasse_numero, mapping_ok, and position.
-        Make sure that prompt List and ground_truth dataFrame are similarly ordered.
+        For each ground-truth row, look up the prompt that was sent for that
+        liasse and check whether the labelled NACE code appears in the prompt's
+        proposed list. Returns a DataFrame with liasse_numero, mapping_ok, and
+        position (rank of the labelled code in the proposed list, 0-based).
         """
-
         pattern = r"'([\d]{2}\.[\d]{2}[A-Z])'"
         mapping = []
-        ground_truth_c = ground_truth.copy().reset_index(drop=True)
-        for idx, row in enumerate(ground_truth_c.to_dict(orient="records")):
+        for row in ground_truth.to_dict(orient="records"):
+            liasse = row["liasse_numero"]
+            idx = liasse_to_idx.get(liasse)
+            if idx is None:
+                continue
             text = prompts[idx][1]["content"]  # 1 to get "user prompt" dict, not "system prompt" dict
 
-            # Retrieve the proposed code from the prompt
+            # Retrieve the proposed codes from the prompt
             proposed_codes = [c.replace(".", "") for c in re.findall(pattern, text)]
 
-            manual_code = ground_truth_c.loc[idx, "apet_manual"]
+            manual_code = row["apet_manual"]
 
             mapping_ok = manual_code in proposed_codes
             position = proposed_codes.index(manual_code) if mapping_ok else None
 
             mapping.append(
                 {
-                    "liasse_numero": ground_truth_c.loc[idx, "liasse_numero"],
+                    "liasse_numero": liasse,
                     "mapping_ok": mapping_ok,
                     "position": position,
                 }

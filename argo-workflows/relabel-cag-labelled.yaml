@@ -70,7 +70,7 @@ spec:
             git checkout doc-jp
             uv sync
             
-            CMD="uv run src/encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}} --only_annotated true"
+            CMD="uv run src/3_encode_ambiguous.py --strategy {{inputs.parameters.STRATEGY}} --experiment_name NACE2025_DATASET --llm_name {{inputs.parameters.LLM_NAME}} --only_annotated true"
 
             echo "Executing: $CMD"
             eval $CMD

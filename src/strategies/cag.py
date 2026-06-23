@@ -4,16 +4,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from langfuse import Langfuse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from tqdm.asyncio import tqdm
-from vllm.sampling_params import GuidedDecodingParams, SamplingParams
 
-from constants.llm import (
-    MAX_NEW_TOKEN,
-    TEMPERATURE,
-)
-from constants.paths import URL_SIRENE4_AMBIGUOUS_CAG, URL_PROMPTS_CAG
+from constants.llm import MAX_NEW_TOKEN_FAST, MAX_NEW_TOKEN_THINKING, TEMPERATURE
+from constants.paths import URL_PROMPTS_CAG, URL_SIRENE4_AMBIGUOUS_CAG
 from utils.data import get_file_system, prompts_to_df
+
 from .base import EncodeStrategy
 
 logger = logging.getLogger(__name__)
@@ -41,31 +38,29 @@ class CAGResponse(BaseModel):
         default=0.0,
     )
 
-    @model_validator(mode="after")
-    def check_nace2025_if_codable(self) -> BaseModel:
-        if self.codable and not self.nace2025:
-            raise ValueError("If codable=True, then nace2025 must not be None or empty.")
-        return self
-
 
 class CAGStrategy(EncodeStrategy):
     def __init__(
         self,
-        generation_model: str = "Qwen/Qwen2.5-0.5B",
+        generation_model: str = "gemma4-31b",
         prompt_name: str = "cag-classifier",
         prompt_label: str = "production",
-        reranker_model: str = None,
+        thinking: bool = False,
+        max_new_tokens: Optional[int] = None,
     ):
         super().__init__(generation_model)
         self.response_format = CAGResponse
         self.prompt_template = Langfuse().get_prompt(prompt_name, label=prompt_label)
-        self.sampling_params = SamplingParams(
-            max_tokens=MAX_NEW_TOKEN,
-            temperature=TEMPERATURE,
-            seed=2025,
-            logprobs=1,
-            guided_decoding=GuidedDecodingParams(json=self.response_format.model_json_schema()),
-        )
+
+        if max_new_tokens is None:
+            max_new_tokens = MAX_NEW_TOKEN_THINKING if thinking else MAX_NEW_TOKEN_FAST
+        self.thinking = thinking
+        self.sampling_params = {
+            "max_tokens": max_new_tokens,
+            "temperature": TEMPERATURE,
+            "seed": 2025,
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": thinking}},
+        }
         self.prompt_name = prompt_name
         self.prompt_label = prompt_label
 
@@ -82,7 +77,8 @@ class CAGStrategy(EncodeStrategy):
     @property
     def output_path(self):
         date = datetime.now().strftime("%Y-%m-%d--%H:%M")
-        return f"{URL_SIRENE4_AMBIGUOUS_CAG}/{self.generation_model}/part-{{i}}-{{third}}--{date}.parquet"
+        model_dir = f"{self.generation_model}-thinking" if self.thinking else self.generation_model
+        return f"{URL_SIRENE4_AMBIGUOUS_CAG}/{model_dir}/part-{{i}}-{{third}}--{date}.parquet"
 
     def postprocess_results(self, df):
         # Apply the base postprocessing first

@@ -137,3 +137,6 @@ test.py
 
 # nohup
 *.out
+
+# MLflow local FileStore (fallback when MLFLOW_TRACKING_URI is unset)
+mlruns/

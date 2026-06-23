@@ -2,10 +2,8 @@ import asyncio
 import logging
 import os
 import tempfile
-#os.chdir('./codif-ape-nace-revision/src')
 import time
-import torch
-import gc
+
 import mlflow
 
 import config
@@ -14,60 +12,16 @@ from evaluation.evaluator import Evaluator
 from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
 from strategies.rag import RAGStrategy
+from constants.data import VAR_TO_KEEP
 from utils.data import get_ambiguous_data
+from utils.error_report import (
+    build_llm_errors_report,
+    build_not_codable_report,
+    build_retriever_errors_report,
+)
+from utils.report import build_report
 
 config.setup()
-
-# STRATEGY_MAP = {
-#     "cag": CAGStrategy,
-#     "rag": RAGStrategy,
-# }
-
-# strategy_cls=STRATEGY_MAP["cag"]
-# experiment_name = "Test"
-# run_name = None
-# collection_name=None
-# llm_name="Qwen/Qwen3-0.6B"
-# third=None
-# prompts_from_file=False
-# save_prompts=False
-# prompt_name="cag-classifier"
-# prompt_label="production"
-# sample_size=None
-# top_k=None
-# only_annotated=False
-
-# def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
-#     logging.info("Initializing strategy ==========================")
-
-#     kwargs = {
-#         "generation_model": llm_name,
-#         "prompt_name": prompt_name,
-#         "prompt_label": prompt_label,
-#     }
-
-#     if strategy_cls in [RAGStrategy]:
-#         kwargs["collection_name"] = collection_name
-
-#     return strategy_cls(**kwargs)
-
-
-# def _load_data(strategy, third, only_annotated, sample_size=None):
-#     logging.info("Loading ambiguous data ==========================")
-#     data = get_ambiguous_data(strategy.mapping, third, only_annotated)
-#     if sample_size is not None:
-#         data = data.head(n=sample_size).reset_index(drop=True)
-#     return data
-
-# strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
-# data = _load_data(strategy, third, only_annotated, sample_size)
-# data.shape
-
-
-
-
-
-
 
 
 async def run_encode(
@@ -83,8 +37,9 @@ async def run_encode(
     top_k: int,
     only_annotated: bool,
     sample_size: int = None,
-    batch_size: int = 512,
     save_prompts: bool = False,
+    thinking: bool = False,
+    max_new_tokens: int | None = None,
 ):
     """Main workflow to run encoding strategy, generate prompts, call LLM, evaluate, and log with MLflow."""
 
@@ -92,24 +47,37 @@ async def run_encode(
     mlflow.set_experiment(experiment_name)
 
     with mlflow.start_run(run_name=run_name):
-        strategy = _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name)
+        strategy = _initialize_strategy(
+            strategy_cls, llm_name, prompt_name, prompt_label, collection_name,
+            thinking=thinking, max_new_tokens=max_new_tokens,
+        )
         data = _load_data(strategy, third, only_annotated, sample_size)
         # prompts, retrieval_time_mn = asyncio.run(_retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts))
         prompts, retrieval_time_mn = await _retrieve_prompts(strategy, data, top_k, prompts_from_file, save_prompts)
 
-        generation_outputs, generation_time_mn = _generate_outputs(strategy, prompts, batch_size)
+        # generation_outputs, generation_time_mn = asyncio.run(_generate_outputs(strategy, prompts))
+        generation_outputs, generation_time_mn = await _generate_outputs(strategy, prompts)
         results = _process_and_merge(strategy, data, generation_outputs)
         metrics, df_eval = _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn, strategy)
-        _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k)
+        _log_mlflow(
+            strategy, llm_name, collection_name, results, metrics, df_eval, top_k,
+            prompts=prompts,
+            run_name=run_name, sample_size=sample_size, only_annotated=only_annotated,
+        )
 
 
-def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, collection_name):
+def _initialize_strategy(
+    strategy_cls, llm_name, prompt_name, prompt_label, collection_name,
+    *, thinking: bool = False, max_new_tokens: int | None = None,
+):
     logging.info("Initializing strategy ==========================")
 
     kwargs = {
         "generation_model": llm_name,
         "prompt_name": prompt_name,
         "prompt_label": prompt_label,
+        "thinking": thinking,
+        "max_new_tokens": max_new_tokens,
     }
 
     if strategy_cls in [RAGStrategy]:
@@ -120,9 +88,9 @@ def _initialize_strategy(strategy_cls, llm_name, prompt_name, prompt_label, coll
 
 def _load_data(strategy, third, only_annotated, sample_size=None):
     logging.info("Loading ambiguous data ==========================")
-    data = get_ambiguous_data(strategy.mapping, third, only_annotated)
+    data = get_ambiguous_data(strategy.mapping, third, only_annotated, VAR_TO_KEEP)
     if sample_size is not None:
-        data = data.head(n=sample_size).reset_index(drop=True)
+        data = data.sample(n=sample_size).reset_index(drop=True)
     return data
 
 
@@ -140,41 +108,13 @@ async def _retrieve_prompts(strategy, data, top_k, load_from_file=False, save_pr
     return prompts, retrieval_time_mn
 
 
-# def _generate_outputs(strategy, prompts):
-#     logging.info("Starting generation ==========================")
-#     start_time = time.time()
-#     outputs = strategy.call_llm(prompts, strategy.sampling_params)
-#     generation_time_mn = (time.time() - start_time) / 60
-#     return outputs, generation_time_mn
-
-
-def _generate_outputs(strategy, prompts, BATCH_SIZE=None):
-
+async def _generate_outputs(strategy, prompts):
     logging.info("Starting generation ======")
     start_time = time.time()
-    logging.info(f"Taille des batches: {BATCH_SIZE}")
-
-    all_generation_outputs = []
-    total_generation_time_mn = 0.0
-
-    # Boucle sur les batchs
-    for i in range(0, len(prompts), BATCH_SIZE):
-        batch_prompts = prompts[i:i + BATCH_SIZE]
-        logging.info(f"🚀 Traitement du batch {i // BATCH_SIZE + 1} / {len(prompts) // BATCH_SIZE + 1} ==== ")
-        batch_outputs = strategy.call_llm(batch_prompts, strategy.sampling_params)
-        all_generation_outputs.extend(batch_outputs)
-
-        # RAM free
-        del batch_prompts
-        del batch_outputs
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
+    outputs = await strategy.call_llm(prompts)
     generation_time_mn = (time.time() - start_time) / 60
-    logging.info(f"✅ Génération terminée pour {len(prompts)} prompts.")
-    logging.info(f"⏱ Temps total de génération : {total_generation_time_mn:.2f} minutes")
-    return all_generation_outputs, generation_time_mn
+    logging.info(f"✅ Génération terminée pour {len(prompts)} prompts en {generation_time_mn:.2f} min.")
+    return outputs, generation_time_mn
 
 
 def _process_and_merge(strategy, data, outputs):
@@ -184,6 +124,8 @@ def _process_and_merge(strategy, data, outputs):
 
 def _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn, strategy):
     metrics, df_eval = Evaluator().evaluate(results, prompts)
+    generation_time_sec = generation_time_mn * 60
+    iter_per_sec = len(results) / generation_time_sec if generation_time_sec > 0 else 0.0
     metrics.update(
         {
             "num_coded": results["codable"].sum(),
@@ -191,16 +133,23 @@ def _evaluate_and_enrich(results, prompts, retrieval_time_mn, generation_time_mn
             "pct_not_coded": round((len(results) - results["codable"].sum()) / len(results) * 100, 2),
             "retrieval_time_mn": round(retrieval_time_mn, 1),
             "generation_time_mn": round(generation_time_mn, 1),
+            "generation_iter_per_sec": round(iter_per_sec, 2),
         }
     )
+    metrics.update(strategy.token_stats)
     return metrics, df_eval
 
 
-def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, top_k):
+def _log_mlflow(
+    strategy, llm_name, collection_name, results, metrics, df_eval, top_k,
+    *, prompts=None, run_name=None, sample_size=None, only_annotated=None,
+):
     output_path = strategy.save_results(results, third=None)
     params = {
         "LLM_MODEL": llm_name,
-        "TEMPERATURE": strategy.sampling_params.temperature,
+        "TEMPERATURE": strategy.sampling_params["temperature"],
+        "MAX_NEW_TOKENS": strategy.sampling_params["max_tokens"],
+        "THINKING": strategy.thinking,
         "input_path": URL_SIRENE4_EXTRACTION,
         "output_path": output_path,
         "strategy": "cag" if isinstance(strategy, CAGStrategy) else "rag",
@@ -211,16 +160,45 @@ def _log_mlflow(strategy, llm_name, collection_name, results, metrics, df_eval, 
     # If RAG
     if hasattr(strategy, "db"):
         params["COLLECTION_NAME"] = collection_name
-        params["EMBEDDING_MODEL"] = getattr(strategy.db, "vector_name", None)
+        params["EMBEDDING_MODEL"] = getattr(strategy.db, "model_name", None)
 
     mlflow.log_params(params)
     for metric, value in metrics.items():
         mlflow.log_metric(metric, value)
 
+    report_md = build_report(
+        strategy, llm_name, collection_name, top_k, sample_size, only_annotated, metrics, run_name,
+        df_eval=df_eval,
+    )
+    error_reports = {
+        "llm_errors.md": build_llm_errors_report(
+            strategy, prompts, results, df_eval, max_examples=5, run_name=run_name,
+        ),
+        "not_codable.md": build_not_codable_report(
+            strategy, prompts, results, df_eval, max_examples=5, run_name=run_name,
+        ),
+    }
+    # Retriever errors only make sense for RAG (CAG has no retrieval step).
+    if hasattr(strategy, "db"):
+        error_reports["retriever_errors.md"] = build_retriever_errors_report(
+            strategy, prompts, results, df_eval, max_examples=5, run_name=run_name,
+        )
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = os.path.join(tmpdir, "df_eval.csv")
-        df_eval.to_csv(file_path, index=False)
-        mlflow.log_artifact(file_path, artifact_path="dataframes")
+        df_path = os.path.join(tmpdir, "df_eval.csv")
+        df_eval.to_csv(df_path, index=False)
+        mlflow.log_artifact(df_path, artifact_path="dataframes")
+
+        report_path = os.path.join(tmpdir, "report.md")
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(report_md)
+        mlflow.log_artifact(report_path, artifact_path="reports")
+
+        for filename, content in error_reports.items():
+            path = os.path.join(tmpdir, filename)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            mlflow.log_artifact(path, artifact_path="reports")
 
 
 if __name__ == "__main__":
@@ -231,7 +209,7 @@ if __name__ == "__main__":
     parser.add_argument("--experiment_name", type=str, default="Test")
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--collection_name", type=str, default=None)
-    parser.add_argument("--llm_name", type=str, default="Qwen/Qwen3-0.6B")
+    parser.add_argument("--llm_name", type=str, choices=["qwen3-6-35b-moe", "gemma4-26b-moe"])
     parser.add_argument("--third", type=int, default=None)
     parser.add_argument("--prompts_from_file", action="store_true")
     parser.add_argument("--save_prompts", action="store_true")
@@ -245,26 +223,19 @@ if __name__ == "__main__":
         choices=["true", "false"],
         default="false",
     )
-    parser.add_argument("--batch_size", type=int, default=512)
-
+    parser.add_argument(
+        "--thinking",
+        action="store_true",
+        help="Enable LLM thinking mode (longer reasoning, more tokens).",
+    )
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=None,
+        help="Override completion token budget. Defaults: 100 (fast) / 2048 (thinking).",
+    )
     args = parser.parse_args()
     
-    # args_list = [
-    #     "--strategy",
-    #     "cag",
-    #     "--experiment_name",
-    #     "NACE2025_DATASET",
-    #     "--llm_name",
-    #     "Qwen/Qwen3-32B",
-    #     "--sample_size",
-    #     "1000",
-    #     "--only_annotated",
-    #     "false"
-    # ]
-    # args = parser.parse_args(args_list)
-
-
-
     assert "MLFLOW_TRACKING_URI" in os.environ, "Set MLFLOW_TRACKING_URI"
 
     if args.only_annotated == "true":
@@ -308,21 +279,8 @@ if __name__ == "__main__":
             top_k=args.top_k,
             save_prompts=args.save_prompts,
             only_annotated=args.only_annotated,
-            batch_size=args.batch_size,
+            thinking=args.thinking,
+            max_new_tokens=args.max_new_tokens,
         )
     )
 
-
-# strategy_cls=STRATEGY_MAP[args.strategy]
-# experiment_name=args.experiment_name
-# run_name=args.run_name
-# collection_name=args.collection_name
-# llm_name=args.llm_name
-# third=args.third
-# prompts_from_file=args.prompts_from_file
-# prompt_name=args.prompt_name
-# prompt_label=args.prompt_label
-# sample_size=args.sample_size
-# top_k=args.top_k
-# save_prompts=args.save_prompts
-# only_annotated=args.only_annotated
