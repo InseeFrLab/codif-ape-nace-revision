@@ -10,7 +10,7 @@ mode: "prod"
 strategy: "cag"
 
 # S3 path to the input parquet (prod mode only; leave empty "" for eval)
-input-url: "s3://projet-ape/data/22062026/naf2025/raw_auto.parquet"
+input-url: "s3://projet-ape/data/24062026/naf2025/raw_auto.parquet"
 
 # MLflow experiment name
 experiment-name: "NACE2025_DATASET"
@@ -28,7 +28,7 @@ batch-size: "1000"
 
 # Step 3 only: sample N rows for a quick test run. "" = full dataset.
 # Sampling is seeded, so a sampled run is still resumable with the same job-id.
-sample-size: ""
+sample-size: "50"
 
 # Qdrant collection used by the RAG strategy (and built by step 1)
 collection-name: "embeddings_qwen"

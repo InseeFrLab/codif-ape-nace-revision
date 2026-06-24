@@ -33,14 +33,20 @@ argo lint --offline argo-workflows/relabel.yaml
 Éditer `params.yaml`, puis :
 
 ```bash
+# --watch : arbre des étapes + statuts en direct (PAS les logs)
 argo submit relabel.yaml --parameter-file params.yaml -n <ns> --watch
+
+# --log : streame les LOGS des conteneurs en direct (toutes les étapes)
+argo submit relabel.yaml --parameter-file params.yaml -n <ns> --log
 ```
+
+`--watch` et `--log` sont alternatifs : l'un montre l'arbre, l'autre les logs. Pour avoir les deux, soumettre avec `--watch` puis suivre les logs dans un autre terminal (`argo logs @latest -f -n <ns>`, voir §3). En fan-out multi-modèles les logs des étapes parallèles s'entremêlent. Ctrl-C coupe l'affichage mais **n'arrête pas** le run.
 
 Surcharger une valeur sans toucher `params.yaml` (`-p` prioritaire) :
 
 ```bash
 argo submit relabel.yaml --parameter-file params.yaml \
-    -p mode=eval -p job-id=eval-run-01 -n <ns> --watch
+    -p mode=eval -p job-id=eval-run-01 -n <ns> --log
 ```
 
 ## 3. Suivre l'exécution

@@ -15,6 +15,7 @@ import logging
 import pandas as pd
 
 import config
+from constants.data import NACE08_VAR, VAR_TO_KEEP as INPUT_VARS
 from constants.paths import (
     URL_GROUND_TRUTH,
     URL_SIRENE4_EXTRACTION,
@@ -27,18 +28,11 @@ from utils.data import get_file_system
 config.setup()
 logger = logging.getLogger(__name__)
 
-VAR_TO_KEEP = [
-    "liasse_numero",
-    "libelle",
-    "evenement_type",
-    "cj",
-    "activ_nat_et",
-    "liasse_type",
-    "activ_surf_et",
-    "activ_sec_agri_et",
-    "activ_nat_lib_et",
-    "activ_perm_et",
-]
+# Auxiliary descriptive variables re-attached to the final dataset. DERIVED from
+# the input schema (constants/data.py) so the two never drift — it is the full
+# input column set minus the NAF 2008 code, which the pipeline replaces with the
+# predicted nace2025. dict.fromkeys dedupes while preserving order.
+VAR_TO_KEEP = [v for v in dict.fromkeys(INPUT_VARS) if v != NACE08_VAR]
 
 
 def build_nace2025_sirene4(input_url: str, job_id: str, output_url: str = None):

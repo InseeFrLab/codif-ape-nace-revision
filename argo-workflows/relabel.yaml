@@ -25,13 +25,6 @@ spec:
       - name: params-conf-list  # JSON list of models; single item skips voting in eval
 
   # Defaults applied to every template's container. Previously expressed with
-  # YAML merge keys (<<: *anchor), but Argo's YAML parser (sigs.k8s.io/yaml)
-  # cannot handle merge keys and silently drops the whole document
-  # ("found nothing to lint"). templateDefaults is the native equivalent:
-  #   - the shared image/command/resources/env live here ONCE;
-  #   - templates inherit them and override only what differs (args,
-  #     inputs/outputs, and aggregate's smaller resources).
-  # No GPU: LLM calls go through the llm.lab provider, so all steps run on a
   # plain CPU image.
   templateDefaults:
     container:
@@ -60,11 +53,6 @@ spec:
           value: us-east-1
         - name: AWS_S3_ENDPOINT
           value: minio.lab.sspcloud.fr
-        - name: HF_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: hf-token
-              key: token
         - name: QDRANT_API_KEY
           valueFrom:
             secretKeyRef:
@@ -80,6 +68,16 @@ spec:
             secretKeyRef:
               name: langfuse-secrets
               key: secretKey
+        - name: LLMLAB_URL
+          valueFrom:
+            secretKeyRef:
+              name: secret-llmlab
+              key: LLMLAB_URL
+        - name: LLMLAB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: secret-llmlab
+              key: LLMLAB_API_KEY
         - name: MLFLOW_S3_ENDPOINT_URL
           value: https://minio.lab.sspcloud.fr
         - name: MLFLOW_TRACKING_URI
