@@ -6,7 +6,7 @@ spec:
   serviceAccountName: workflow
   entrypoint: main
   # Parameter VALUES live in argo-workflows/params.yaml and are supplied at
-  # submit time via `--parameter-file` (see argo-workflows/argo_helper.txt).
+  # submit time via `--parameter-file` (see argo-workflows/argo_helper.md).
   # Only the declarations (names) are kept here so templates can reference
   # {{workflow.parameters.X}}; a value not provided at submit fails fast.
   arguments:

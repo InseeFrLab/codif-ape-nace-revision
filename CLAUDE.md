@@ -88,7 +88,7 @@ See `.env.example`: `LLMLAB_*`, `MLFLOW_TRACKING_*`, `QDRANT_*`, `LANGFUSE_*`, `
 
 - `relabel.yaml` — full pipeline DAG (steps 0→5). Parameter **declarations** only (no values).
 - `params.yaml` — parameter **values**; the only file to edit per run.
-- `argo_helper.txt` — submit/monitor/resume procedure with the `argo` CLI.
+- `argo_helper.md` — submit/monitor/resume procedure with the `argo` CLI.
 
 ```
 0 validate ──┬─> 1 build-vector-db (rag, opt-in) ─┐
