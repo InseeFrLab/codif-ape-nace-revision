@@ -13,7 +13,7 @@ import argparse
 import logging
 
 import config
-from constants.data import VAR_TO_KEEP
+from constants.data import ACTIVITY_LABEL_VAR, ID_VAR, NACE08_VAR, VAR_TO_KEEP
 from constants.paths import URL_SIRENE4_EXTRACTION
 from utils.data import load_data_from_s3
 
@@ -45,14 +45,14 @@ def validate_input(input_url: str) -> None:
     query = f"""
         SELECT
             count(*) AS n_rows,
-            count(DISTINCT liasse_numero) AS liasse_distinct,
-            count(*) FILTER (WHERE liasse_numero IS NULL) AS liasse_null,
-            count(*) FILTER (WHERE apet_finale IS NULL) AS apet_null,
+            count(DISTINCT {ID_VAR}) AS liasse_distinct,
+            count(*) FILTER (WHERE {ID_VAR} IS NULL) AS liasse_null,
+            count(*) FILTER (WHERE {NACE08_VAR} IS NULL) AS apet_null,
             count(*) FILTER (
-                WHERE apet_finale IS NOT NULL
-                AND NOT regexp_matches(apet_finale, '{NAF08_PATTERN}')
+                WHERE {NACE08_VAR} IS NOT NULL
+                AND NOT regexp_matches({NACE08_VAR}, '{NAF08_PATTERN}')
             ) AS apet_bad_format,
-            count(*) FILTER (WHERE libelle IS NULL OR trim(libelle) = '') AS libelle_empty
+            count(*) FILTER (WHERE {ACTIVITY_LABEL_VAR} IS NULL OR trim({ACTIVITY_LABEL_VAR}) = '') AS libelle_empty
         FROM read_parquet('{input_url}')
     """
     stats = load_data_from_s3(query).iloc[0].to_dict()

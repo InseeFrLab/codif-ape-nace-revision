@@ -7,6 +7,7 @@ from langfuse import Langfuse
 from pydantic import BaseModel, Field
 from tqdm.asyncio import tqdm
 
+from constants.data import NACE08_VAR
 from constants.llm import MAX_NEW_TOKEN_FAST, MAX_NEW_TOKEN_THINKING, TEMPERATURE
 from constants.paths import URL_PROMPTS_CAG, URL_SIRENE4_AMBIGUOUS_CAG
 from utils.data import get_file_system, prompts_to_df
@@ -95,7 +96,8 @@ class CAGStrategy(EncodeStrategy):
 
     async def create_prompt(self, row: Dict[str, Any]) -> List[Dict]:
         activity = self._format_activity_description(row)
-        nace08 = f"{row.get('apet_finale')[:2]}.{row.get('apet_finale')[2:]}"
+        apet = row.get(NACE08_VAR)
+        nace08 = f"{apet[:2]}.{apet[2:]}"
         nace_old, proposed_codes, list_codes = self._format_documents(nace08)
 
         prompts = self.prompt_template.compile(

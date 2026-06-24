@@ -21,6 +21,7 @@ from tenacity import (
 )
 from tqdm.asyncio import tqdm
 
+from constants.data import ACTIVITY_LABEL_VAR, ACTIVITY_PRECISION_VARS
 from constants.vector_db import MAX_CONCURRENCY
 from utils.data import fetch_mapping, get_file_system
 
@@ -90,19 +91,17 @@ class EncodeStrategy(ABC):
 
     def _format_activity_description(self, row: Any) -> str:
         """
-        Format the activity description from the row data.
-        Adds precisions in case of agricultural activity.
+        Format the activity description from the row data, appending the
+        precision fields declared in ACTIVITY_PRECISION_VARS (with their label).
+        Column names come from constants.data — none are hardcoded here.
         """
-        activity = row.get("libelle").lower() if row.get("libelle").isupper() else row.get("libelle")
+        label = row.get(ACTIVITY_LABEL_VAR)
+        activity = label.lower() if label.isupper() else label
 
-        if row.get("activ_sec_agri_et"):
-            activity += f"\nPrécisions sur l'activité agricole : {row.get('activ_sec_agri_et').lower()}"
-
-        if row.get("activ_nat_lib_et_1"):
-            activity += f"\nAutre nature d'activité : {row.get('activ_nat_lib_et_1').lower()}"
-
-        if row.get("lib_cj"):
-            activity += f"\nCatégorie juridique de l'établissement : {row.get('lib_cj').lower()}"
+        for var, prefix in ACTIVITY_PRECISION_VARS.items():
+            value = row.get(var)
+            if value:
+                activity += f"\n{prefix} : {value.lower()}"
 
         return activity
 

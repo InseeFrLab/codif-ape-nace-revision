@@ -6,6 +6,7 @@ import duckdb
 import pandas as pd
 import s3fs
 
+from constants.data import ID_VAR, NACE08_VAR
 from constants.paths import (
     URL_EXPLANATORY_NOTES,
     URL_GROUND_TRUTH,
@@ -207,21 +208,21 @@ def get_ambiguous_data(mapping: Any, third: Optional[int], input_url: Optional[s
     source_url = input_url if input_url else URL_SIRENE4_EXTRACTION
 
     # Construct SQL query components
-    filter_columns_sql = ", ".join([v for v in var_to_keep if v not in {"liasse_numero", "apet_finale"}])
+    filter_columns_sql = ", ".join([v for v in var_to_keep if v not in {ID_VAR, NACE08_VAR}])
     selected_columns_sql = ", ".join(var_to_keep)
     ambiguous_codes = "', '".join([m.code.replace(".", "") for m in mapping])
 
     # In eval mode (no input_url), restrict to annotated rows so the Evaluator always finds ground truth
     ground_truth_filter = (
-        f"AND liasse_numero IN (SELECT liasse_numero FROM read_parquet('{URL_GROUND_TRUTH}'))"
+        f"AND {ID_VAR} IN (SELECT {ID_VAR} FROM read_parquet('{URL_GROUND_TRUTH}'))"
         if input_url is None else ""
     )
 
     query = f"""
         WITH filtered_data AS (
-            SELECT DISTINCT ON (liasse_numero) *
+            SELECT DISTINCT ON ({ID_VAR}) *
             FROM read_parquet('{source_url}')
-            WHERE apet_finale IN ('{ambiguous_codes}')
+            WHERE {NACE08_VAR} IN ('{ambiguous_codes}')
             {ground_truth_filter}
         ),
         deduplicated_data AS (
@@ -230,7 +231,7 @@ def get_ambiguous_data(mapping: Any, third: Optional[int], input_url: Optional[s
         )
         SELECT {selected_columns_sql}
         FROM deduplicated_data
-        ORDER BY liasse_numero;
+        ORDER BY {ID_VAR};
     """
 
     try:
