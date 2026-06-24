@@ -181,13 +181,18 @@ class EncodeStrategy(ABC):
 
         completion = [u.completion_tokens for u in usages]
         prompt = [u.prompt_tokens for u in usages]
+        # `*_sum` and `n_calls` let callers aggregate stats across multiple
+        # call_llm invocations (e.g. one per batch) — see utils.batch.merge_token_stats.
         stats = {
             "completion_tokens_mean": sum(completion) / len(completion),
             "completion_tokens_max":  max(completion),
             "completion_tokens_min":  min(completion),
+            "completion_tokens_sum":  sum(completion),
             "prompt_tokens_mean":     sum(prompt) / len(prompt),
             "prompt_tokens_max":      max(prompt),
             "prompt_tokens_min":      min(prompt),
+            "prompt_tokens_sum":      sum(prompt),
+            "n_calls":                len(usages),
         }
         logger.info(
             "Token usage over %d successful calls — "

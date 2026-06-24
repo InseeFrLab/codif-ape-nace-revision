@@ -3,6 +3,7 @@ import logging
 import os
 
 import config
+from constants.paths import URL_EXPLANATORY_NOTES, URL_MAPPING_TABLE
 from vector_db.loading import create_vector_db, get_embedding_model
 from vector_db.notices_nace import fetch_nace2025_labels
 
@@ -11,6 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 def main(collection_name: str, model_name: str, excluded_fields: list[str] | None = None):
+    logger.info("===== STEP 1: build vector DB =====")
+    logger.info("INPUT  : %s", URL_MAPPING_TABLE)
+    logger.info("INPUT  : %s", URL_EXPLANATORY_NOTES)
+    logger.info("OUTPUT : Qdrant collection '%s' at %s", collection_name, os.getenv("QDRANT_URL"))
+
     labels = fetch_nace2025_labels(excluded_fields)
 
     # Build a list of {page_content, metadata} mappings, the format expected

@@ -1,8 +1,11 @@
+import argparse
+import logging
 import os
 
 import duckdb
 import pandas as pd
 
+import config
 from constants.paths import (
     URL_EXPLANATORY_NOTES,
     URL_MAPPING_TABLE,
@@ -12,25 +15,25 @@ from constants.paths import (
 from mappings.mappings import get_mapping
 from utils.data import get_file_system
 
+config.setup()
+logger = logging.getLogger(__name__)
 
-def encore_univoque():
+
+def encode_unambiguous(input_url: str, output_url: str):
+    """Relabel the unambiguous (univocal) NAF 2008 → NAF 2025 codes.
+
+    For every NAF 2008 code that maps to exactly one NAF 2025 code, rewrite it
+    directly (no LLM needed) and write the result to `output_url`.
+
+    Args:
+        input_url: S3 path of the source SIRENE 4 extraction.
+        output_url: S3 path of the univocal predictions Parquet to write.
     """
-    Processes the NAF code mappings and relabels the source dataset with new NAF codes (2025 version)
-    for rows with unambiguous mappings (univoque codes), then outputs the result as a Parquet file.
-
-    Parameters:
-    -----------
-    url_source : str
-        The S3 URL of the source dataset in Parquet format to be relabeled.
-
-    url_out : str
-        The S3 URL where the relabeled output dataset will be saved as a Parquet file.
-
-    Returns:
-    --------
-    None
-        The function writes the relabeled dataset to the specified output location.
-    """
+    logger.info("===== STEP 2: encode unambiguous =====")
+    logger.info("INPUT  : %s", input_url)
+    logger.info("INPUT  : %s", URL_MAPPING_TABLE)
+    logger.info("INPUT  : %s", URL_EXPLANATORY_NOTES)
+    logger.info("OUTPUT : %s", output_url)
 
     fs = get_file_system()
 
@@ -45,6 +48,7 @@ def encore_univoque():
 
     # Select all univoque codes
     univoques = {code.code: code.naf2025[0].code for code in mapping if len(code.naf2025) == 1}
+    logger.info("Found %d univocal NAF 2008 codes to rewrite.", len(univoques))
 
     con = duckdb.connect(database=":memory:")
 
@@ -60,7 +64,7 @@ def encore_univoque():
             liasse_numero,
             {case_statement}
         FROM
-            read_parquet('{URL_SIRENE4_EXTRACTION}')
+            read_parquet('{input_url}')
         WHERE
             apet_finale IN ('{"', '".join(univoques.keys())}')
     """
@@ -74,12 +78,31 @@ def encore_univoque():
 
         COPY
         ({query})
-        TO '{URL_SIRENE4_UNIVOCAL}'
+        TO '{output_url}'
         (FORMAT 'parquet')
     ;
     """
     )
+    logger.info("✅ Univocal predictions written to %s", output_url)
 
 
 if __name__ == "__main__":
-    encore_univoque()
+    parser = argparse.ArgumentParser(description="Relabel unambiguous (univocal) NAF codes.")
+    parser.add_argument(
+        "--input_url",
+        type=str,
+        default=None,
+        help="S3 path of the source extraction. Defaults to URL_SIRENE4_EXTRACTION.",
+    )
+    parser.add_argument(
+        "--output_url",
+        type=str,
+        default=URL_SIRENE4_UNIVOCAL,
+        help="S3 path of the univocal predictions Parquet to write.",
+    )
+    args = parser.parse_args()
+
+    encode_unambiguous(
+        input_url=args.input_url or URL_SIRENE4_EXTRACTION,
+        output_url=args.output_url,
+    )

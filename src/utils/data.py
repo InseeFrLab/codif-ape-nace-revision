@@ -12,6 +12,7 @@ from constants.paths import (
     URL_MAPPING_TABLE,
     URL_PROMPTS_RAG,
     URL_SIRENE4_EXTRACTION,
+    URL_RUN_ID,
 )
 from mappings.mappings import get_mapping
 
@@ -183,16 +184,17 @@ def fetch_mapping() -> Any:
     return mapping_ambiguous
 
 
-def get_ambiguous_data(mapping: Any, third: Optional[int], only_annotated: bool = False, var_to_keep: List[str] = None) -> pd.DataFrame:
+def get_ambiguous_data(mapping: Any, third: Optional[int], input_url: Optional[str] = None, var_to_keep: List[str] = None) -> pd.DataFrame:
     """
-    Loads and processes data from multiple sources, filtering for ambiguous codes and optionally
-    restricting to annotated records.
+    Loads and processes data, filtering for ambiguous NAF codes.
 
     Args:
         mapping (Any): A collection of mapping objects that define ambiguous APET codes.
         third (Optional[int]): If provided (1, 2, or 3), returns only the corresponding third
             of the data. If None, returns the full dataset.
-        only_annotated (bool): If True, restricts results to records with ground truth annotations.
+        input_url (Optional[str]): S3 path to the source Parquet file.
+            - None (eval mode): uses URL_SIRENE4_EXTRACTION filtered to annotated rows only.
+            - str (prod mode): uses the provided file with no ground-truth filter.
         var_to_keep (List[str]): Columns to select from the source Parquet file.
 
     Returns:
@@ -202,20 +204,23 @@ def get_ambiguous_data(mapping: Any, third: Optional[int], only_annotated: bool 
         RuntimeError: If there is an error loading data from S3 or processing the query.
         ValueError: If the 'third' parameter is not None, 1, 2, or 3.
     """
+    source_url = input_url if input_url else URL_SIRENE4_EXTRACTION
+
     # Construct SQL query components
     filter_columns_sql = ", ".join([v for v in var_to_keep if v not in {"liasse_numero", "apet_finale"}])
     selected_columns_sql = ", ".join(var_to_keep)
     ambiguous_codes = "', '".join([m.code.replace(".", "") for m in mapping])
 
-    # Filter only annotated data if specified
+    # In eval mode (no input_url), restrict to annotated rows so the Evaluator always finds ground truth
     ground_truth_filter = (
-        f"AND liasse_numero IN (SELECT liasse_numero FROM read_parquet('{URL_GROUND_TRUTH}'))" if only_annotated else ""
+        f"AND liasse_numero IN (SELECT liasse_numero FROM read_parquet('{URL_GROUND_TRUTH}'))"
+        if input_url is None else ""
     )
 
     query = f"""
         WITH filtered_data AS (
             SELECT DISTINCT ON (liasse_numero) *
-            FROM read_parquet('{URL_SIRENE4_EXTRACTION}')
+            FROM read_parquet('{source_url}')
             WHERE apet_finale IN ('{ambiguous_codes}')
             {ground_truth_filter}
         ),
@@ -270,6 +275,16 @@ def prompts_to_df(prompts: List[List[Dict]]) -> pd.DataFrame:
             row[f"{role}_content"] = message["content"]
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def write_run_id_to_s3(experiment_name: str, llm_name: str, run_id: str) -> None:
+    """Write a MLflow run ID to S3 so the ensemble step can retrieve it."""
+    safe_name = llm_name.replace("/", "_")
+    path = URL_RUN_ID.format(experiment_name=experiment_name, llm_name=safe_name)
+    fs = get_file_system()
+    with fs.open(path.replace("s3://", ""), "w") as f:
+        f.write(run_id)
+    logging.info("Run ID %s written to %s", run_id, path)
 
 
 def df_to_prompts(df: pd.DataFrame) -> List[List[Dict]]:

@@ -39,7 +39,9 @@ prompt_name        = "rag-classifier"   # "rag-classifier" for RAG
 prompt_label       = "production"
 top_k              = 5               # None for CAG, e.g. 5 for RAG
 sample_size        = 50
-only_annotated     = True
+# Mirrors eval mode: input_url=None loads URL_SIRENE4_EXTRACTION filtered to
+# annotated rows. Set to an S3 path to mimic a prod run on a custom file.
+input_url          = None
 
 
 # =============================================================================
@@ -60,7 +62,7 @@ strategy = strategy_cls(**kwargs)
 # Step 2 — Load ambiguous data
 # =============================================================================
 logging.info("Loading ambiguous data ==========================")
-data = get_ambiguous_data(strategy.mapping, third, only_annotated, VAR_TO_KEEP)
+data = get_ambiguous_data(strategy.mapping, third, input_url, VAR_TO_KEEP)
 if sample_size is not None:
     data = data.head(n=sample_size).reset_index(drop=True)
 

@@ -1,17 +1,30 @@
-# Not UP-TO-DATE
+"""Step 5 — assemble the final NACE 2025 SIRENE 4 dataset.
+
+Combines the three sources of NAF 2025 codes into a single deduplicated table:
+  - univocal rewrites           (step 2 output, URL_SIRENE4_UNIVOCAL)
+  - LLM predictions (ambiguous) (step 4 output, URL_SIRENE4_AMBIGUOUS_FINAL)
+  - human annotations           (ground truth, URL_GROUND_TRUTH)
+
+Auxiliary descriptive variables are re-attached from the source extraction.
+"""
+
+import argparse
+import logging
 
 import pandas as pd
 
-from src.constants.paths import (
+import config
+from constants.paths import (
     URL_GROUND_TRUTH,
     URL_SIRENE4_AMBIGUOUS_FINAL,
     URL_SIRENE4_EXTRACTION,
     URL_SIRENE4_NACE2025,
     URL_SIRENE4_UNIVOCAL,
 )
-from src.utils.cache_models import get_file_system
+from utils.data import get_file_system
 
-fs = get_file_system()
+config.setup()
+logger = logging.getLogger(__name__)
 
 VAR_TO_KEEP = [
     "liasse_numero",
@@ -26,61 +39,95 @@ VAR_TO_KEEP = [
     "activ_perm_et",
 ]
 
-# Pour les univoques, on enleve les doublons de liasse seulement
-data_univocal = pd.read_parquet(URL_SIRENE4_UNIVOCAL, filesystem=fs)
-data_univocal = data_univocal.drop_duplicates(subset="liasse_numero")
 
-# Pour les multivocaux issue de l'annotation humaine on enleve les doublons de liasse et on renomme la colonne apet_manual en nace2025
-data_ambiguous_ground_truth = (
-    pd.read_parquet(URL_GROUND_TRUTH, filesystem=fs)
-    .rename(columns={"apet_manual": "nace2025"})
-    .loc[:, ["liasse_numero", "nace2025"]]
-)
-data_ambiguous_ground_truth = data_ambiguous_ground_truth.drop_duplicates(subset="liasse_numero")
+def build_nace2025_sirene4(input_url: str, output_url: str):
+    logger.info("===== STEP 5: build final NACE 2025 dataset =====")
+    logger.info("INPUT  : %s (univocal)", URL_SIRENE4_UNIVOCAL)
+    logger.info("INPUT  : %s (ambiguous, LLM)", URL_SIRENE4_AMBIGUOUS_FINAL)
+    logger.info("INPUT  : %s (ground truth)", URL_GROUND_TRUTH)
+    logger.info("INPUT  : %s (auxiliary variables)", input_url)
+    logger.info("OUTPUT : %s", output_url)
 
-# Pour les multivocaux du LLM on enlève les données qui sont dans l'annotation humaine
-data_ambiguous = pd.read_parquet(URL_SIRENE4_AMBIGUOUS_FINAL, filesystem=fs)
-data_ambiguous = data_ambiguous.loc[
-    ~data_ambiguous["liasse_numero"].isin(data_ambiguous_ground_truth["liasse_numero"].tolist())
-]
+    fs = get_file_system()
 
-# Pour les données de sirene 4, on enlève les doublons de liasse
-data_sirene4 = pd.read_parquet(URL_SIRENE4_EXTRACTION, filesystem=fs).loc[:, VAR_TO_KEEP]
-data_sirene4 = data_sirene4.drop_duplicates(subset="liasse_numero")
+    # Univocal: drop duplicate liasse only
+    data_univocal = pd.read_parquet(URL_SIRENE4_UNIVOCAL, filesystem=fs)
+    data_univocal = data_univocal.drop_duplicates(subset="liasse_numero")
 
-# On rajoute les variables annexes aux multivoques, univoques et ground truth contenant l'annotation nace2025
-data_univocal = data_univocal.merge(data_sirene4, on="liasse_numero", how="left")
-data_ambiguous = data_ambiguous.merge(data_sirene4, on="liasse_numero", how="left")
-data_ambiguous_ground_truth = data_ambiguous_ground_truth.merge(data_sirene4, on="liasse_numero", how="left")
-
-# few lines are still duplicated, remove them before merge. Old Label Studio pipeline was not 100% perfect
-data_ambiguous_ground_truth = data_ambiguous_ground_truth.drop_duplicates(
-    subset=[v for v in VAR_TO_KEEP if v != "liasse_numero"]
-)
-
-# On reconstruit les données multivoques en réinjectant les code nace 2025 pour les doublons
-data_sirene4_multivoque = data_sirene4.loc[
-    ~data_sirene4["liasse_numero"].isin(data_univocal["liasse_numero"].tolist()), VAR_TO_KEEP
-]
-data_ambiguous_resampled = (
-    data_ambiguous.merge(data_sirene4_multivoque, on=[v for v in VAR_TO_KEEP if v != "liasse_numero"], how="left")
-    .rename(columns={"liasse_numero_y": "liasse_numero"})
-    .drop(columns=["liasse_numero_x"])
-)
-data_ambiguous_ground_truth_resampled = (
-    data_ambiguous_ground_truth.merge(
-        data_sirene4_multivoque, on=[v for v in VAR_TO_KEEP if v != "liasse_numero"], how="left"
+    # Ambiguous (human annotation): drop duplicate liasse, rename apet_manual → nace2025
+    data_ambiguous_ground_truth = (
+        pd.read_parquet(URL_GROUND_TRUTH, filesystem=fs)
+        .rename(columns={"apet_manual": "nace2025"})
+        .loc[:, ["liasse_numero", "nace2025"]]
     )
-    .rename(columns={"liasse_numero_y": "liasse_numero"})
-    .drop(columns=["liasse_numero_x"])
-)
-# Certains univoques sont les dans les multivoques, on les enlève
-data_ambiguous_ground_truth_resampled.dropna(subset=["liasse_numero"], inplace=True)
+    data_ambiguous_ground_truth = data_ambiguous_ground_truth.drop_duplicates(subset="liasse_numero")
 
-data_sirene4_nace2025 = pd.concat(
-    [data_univocal, data_ambiguous_resampled, data_ambiguous_ground_truth_resampled], axis=0
-)
+    # Ambiguous (LLM): drop rows already covered by human annotation
+    data_ambiguous = pd.read_parquet(URL_SIRENE4_AMBIGUOUS_FINAL, filesystem=fs)
+    data_ambiguous = data_ambiguous.loc[
+        ~data_ambiguous["liasse_numero"].isin(data_ambiguous_ground_truth["liasse_numero"].tolist())
+    ]
 
-assert data_sirene4_nace2025.duplicated(subset="liasse_numero").sum() == 0
+    # Source SIRENE 4 auxiliary variables: drop duplicate liasse
+    data_sirene4 = pd.read_parquet(input_url, filesystem=fs).loc[:, VAR_TO_KEEP]
+    data_sirene4 = data_sirene4.drop_duplicates(subset="liasse_numero")
 
-data_sirene4_nace2025.to_parquet(URL_SIRENE4_NACE2025, filesystem=fs)
+    # Attach auxiliary variables to each source
+    data_univocal = data_univocal.merge(data_sirene4, on="liasse_numero", how="left")
+    data_ambiguous = data_ambiguous.merge(data_sirene4, on="liasse_numero", how="left")
+    data_ambiguous_ground_truth = data_ambiguous_ground_truth.merge(data_sirene4, on="liasse_numero", how="left")
+
+    # few lines are still duplicated, remove them before merge. Old Label Studio pipeline was not 100% perfect
+    data_ambiguous_ground_truth = data_ambiguous_ground_truth.drop_duplicates(
+        subset=[v for v in VAR_TO_KEEP if v != "liasse_numero"]
+    )
+
+    # Rebuild multivocal rows by re-injecting NAF 2025 codes onto duplicates
+    data_sirene4_multivoque = data_sirene4.loc[
+        ~data_sirene4["liasse_numero"].isin(data_univocal["liasse_numero"].tolist()), VAR_TO_KEEP
+    ]
+    data_ambiguous_resampled = (
+        data_ambiguous.merge(data_sirene4_multivoque, on=[v for v in VAR_TO_KEEP if v != "liasse_numero"], how="left")
+        .rename(columns={"liasse_numero_y": "liasse_numero"})
+        .drop(columns=["liasse_numero_x"])
+    )
+    data_ambiguous_ground_truth_resampled = (
+        data_ambiguous_ground_truth.merge(
+            data_sirene4_multivoque, on=[v for v in VAR_TO_KEEP if v != "liasse_numero"], how="left"
+        )
+        .rename(columns={"liasse_numero_y": "liasse_numero"})
+        .drop(columns=["liasse_numero_x"])
+    )
+    # Some univocal rows leak into multivocal, drop them
+    data_ambiguous_ground_truth_resampled.dropna(subset=["liasse_numero"], inplace=True)
+
+    data_sirene4_nace2025 = pd.concat(
+        [data_univocal, data_ambiguous_resampled, data_ambiguous_ground_truth_resampled], axis=0
+    )
+
+    assert data_sirene4_nace2025.duplicated(subset="liasse_numero").sum() == 0
+
+    data_sirene4_nace2025.to_parquet(output_url, filesystem=fs)
+    logger.info("✅ Final dataset (%d rows) written to %s", len(data_sirene4_nace2025), output_url)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Build the final NACE 2025 SIRENE 4 dataset.")
+    parser.add_argument(
+        "--input_url",
+        type=str,
+        default=None,
+        help="S3 path of the source extraction (auxiliary variables). Defaults to URL_SIRENE4_EXTRACTION.",
+    )
+    parser.add_argument(
+        "--output_url",
+        type=str,
+        default=URL_SIRENE4_NACE2025,
+        help="S3 path of the final NACE 2025 dataset to write.",
+    )
+    args = parser.parse_args()
+
+    build_nace2025_sirene4(
+        input_url=args.input_url or URL_SIRENE4_EXTRACTION,
+        output_url=args.output_url,
+    )

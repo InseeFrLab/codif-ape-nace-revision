@@ -1,0 +1,427 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: run-relabel
+spec:
+  serviceAccountName: workflow
+  volumes:
+    - name: dshm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 64Gi
+  entrypoint: main
+  arguments:
+    parameters:
+      # "prod" (produce the recoded dataset) or "eval" (compute metrics on annotated rows)
+      - name: mode
+        value: "prod"
+      # "cag" or "rag"
+      - name: strategy
+        value: "cag"
+      # S3 path to the input parquet (prod mode only; leave empty for eval)
+      - name: input-url
+        value: ""
+      - name: experiment-name
+        value: "NACE2025_DATASET"
+      - name: branch
+        value: "prod"
+      # Stable id shared by all models of this run. Re-submitting with the SAME
+      # job-id resumes crashed encode tasks (completed batches are skipped).
+      - name: job-id
+        value: "job-001"
+      - name: batch-size
+        value: "1000"
+      # Qdrant collection used by the RAG strategy (and built by step 1).
+      - name: collection-name
+        value: "embeddings_qwen"
+      # Embedding model for step 1 (empty = script default).
+      - name: embedding-model
+        value: ""
+      # Set to "true" to (re)build the vector DB in step 1 (RAG only).
+      - name: build-vector-db
+        value: "false"
+      # List of models. A single-item list skips voting in eval mode.
+      - name: params-conf-list
+        value: '[
+          {"LLM_NAME": "Qwen/Qwen3-32B"},
+          {"LLM_NAME": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"},
+          {"LLM_NAME": "mistralai/Mistral-Small-3.2-24B-Instruct-2506"}
+          ]'
+
+  templates:
+    # =========================================================================
+    # DAG — full pipeline:
+    #   0 validate ──┬─> 1 build-vector-db (rag, opt-in) ─┐
+    #                ├─> 2 encode-unambiguous (prod) ──────┼─> 5 build-final (prod)
+    #                └─> 3 encode (fan-out) ─> aggregate ─> 4 ensemble ─┘
+    # =========================================================================
+    - name: main
+      dag:
+        tasks:
+          - name: validate
+            template: validate
+
+          - name: build-vector-db
+            template: build-vector-db
+            dependencies: [validate]
+            when: "'{{workflow.parameters.strategy}}' == 'rag' && '{{workflow.parameters.build-vector-db}}' == 'true'"
+
+          - name: encode-unambiguous
+            template: encode-unambiguous
+            dependencies: [validate]
+            when: "'{{workflow.parameters.mode}}' == 'prod'"
+
+          - name: encode
+            template: run-encode
+            dependencies: [validate, build-vector-db]
+            arguments:
+              parameters:
+                - name: LLM_NAME
+                  value: "{{item.LLM_NAME}}"
+            withParam: "{{workflow.parameters.params-conf-list}}"
+
+          - name: aggregate
+            template: aggregate-run-ids
+            dependencies: [encode]
+            arguments:
+              parameters:
+                - name: params-conf-list
+                  value: "{{workflow.parameters.params-conf-list}}"
+                - name: experiment-name
+                  value: "{{workflow.parameters.experiment-name}}"
+                - name: mode
+                  value: "{{workflow.parameters.mode}}"
+
+          - name: ensemble
+            template: run-ensemble
+            dependencies: [aggregate]
+            when: "'{{tasks.aggregate.outputs.parameters.should-ensemble}}' == 'true'"
+            arguments:
+              parameters:
+                - name: RUN_IDS
+                  value: "{{tasks.aggregate.outputs.parameters.run-ids}}"
+
+          - name: build-final
+            template: build-final
+            dependencies: [encode-unambiguous, ensemble]
+            when: "'{{workflow.parameters.mode}}' == 'prod'"
+
+    # =========================================================================
+    # Step 0 — input validation (gate)
+    # =========================================================================
+    - name: validate
+      container: &cpu-container
+        image: inseefrlab/onyxia-vscode-pytorch:py3.12.11-gpu
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: 4000m
+            memory: 16Gi
+          requests:
+            cpu: 1000m
+            memory: 4Gi
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
+            cd codif-ape-nace-revision/
+            git checkout {{workflow.parameters.branch}}
+            uv sync
+
+            CMD="uv run src/0_input_validation.py --mode {{workflow.parameters.mode}}"
+            if [ "{{workflow.parameters.input-url}}" != "" ]; then
+              CMD="$CMD --input_url {{workflow.parameters.input-url}}"
+            fi
+            echo "Executing: $CMD"
+            eval $CMD
+        env: &common-env
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: my-s3-creds
+                key: accessKey
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-s3-creds
+                key: secretKey
+          - name: AWS_DEFAULT_REGION
+            value: us-east-1
+          - name: AWS_S3_ENDPOINT
+            value: minio.lab.sspcloud.fr
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-token
+                key: token
+          - name: QDRANT_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: qdrant-apikey
+                key: api-key
+          - name: LANGFUSE_PUBLIC_KEY
+            valueFrom:
+              secretKeyRef:
+                name: langfuse-secrets
+                key: publicKey
+          - name: LANGFUSE_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: langfuse-secrets
+                key: secretKey
+          - name: MLFLOW_S3_ENDPOINT_URL
+            value: https://minio.lab.sspcloud.fr
+          - name: MLFLOW_TRACKING_URI
+            value: https://projet-ape-mlflow.user.lab.sspcloud.fr/
+          - name: LANGFUSE_HOST
+            value: https://langfuse.lab.sspcloud.fr
+          - name: QDRANT_URL
+            value: https://projet-ape-qdrant.user.lab.sspcloud.fr/
+          - name: COLLECTION_NAME
+            value: "{{workflow.parameters.collection-name}}"
+          - name: TORCH_CUDA_ARCH_LIST
+            value: "9.0"
+          - name: VLLM_USE_FLASHINFER_SAMPLER
+            value: "1"
+
+    # =========================================================================
+    # Step 1 — build vector DB (RAG only, opt-in)
+    # =========================================================================
+    - name: build-vector-db
+      affinity: &gpu-affinity
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.product
+                    operator: In
+                    values:
+                      - NVIDIA-H100-NVL
+                      - NVIDIA-H100-PCIe
+      container:
+        image: inseefrlab/onyxia-vscode-pytorch:py3.12.11-gpu
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            cpu: 30000m
+            memory: 200Gi
+          requests:
+            cpu: 11000m
+            memory: 100Gi
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
+            cd codif-ape-nace-revision/
+            git checkout {{workflow.parameters.branch}}
+            uv sync
+
+            CMD="uv run src/1_build_vector_db.py --collection_name {{workflow.parameters.collection-name}}"
+            if [ "{{workflow.parameters.embedding-model}}" != "" ]; then
+              CMD="$CMD --model_name {{workflow.parameters.embedding-model}}"
+            fi
+            echo "Executing: $CMD"
+            eval $CMD
+        volumeMounts:
+          - mountPath: /dev/shm
+            name: dshm
+        env: *common-env
+
+    # =========================================================================
+    # Step 2 — encode unambiguous (prod)
+    # =========================================================================
+    - name: encode-unambiguous
+      container:
+        <<: *cpu-container
+        args:
+          - |
+            git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
+            cd codif-ape-nace-revision/
+            git checkout {{workflow.parameters.branch}}
+            uv sync
+
+            CMD="uv run src/2_encode_unambiguous.py"
+            if [ "{{workflow.parameters.input-url}}" != "" ]; then
+              CMD="$CMD --input_url {{workflow.parameters.input-url}}"
+            fi
+            echo "Executing: $CMD"
+            eval $CMD
+
+    # =========================================================================
+    # Step 3 — encode ambiguous (one container per model, fan-out)
+    # =========================================================================
+    - name: run-encode
+      inputs:
+        parameters:
+          - name: LLM_NAME
+      affinity: *gpu-affinity
+      container:
+        image: inseefrlab/onyxia-vscode-pytorch:py3.12.11-gpu
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            cpu: 30000m
+            memory: 200Gi
+          requests:
+            cpu: 11000m
+            memory: 100Gi
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
+            cd codif-ape-nace-revision/
+            git checkout {{workflow.parameters.branch}}
+            uv sync
+
+            CMD="uv run src/3_encode_ambiguous.py \
+              --strategy {{workflow.parameters.strategy}} \
+              --mode {{workflow.parameters.mode}} \
+              --experiment_name {{workflow.parameters.experiment-name}} \
+              --llm_name {{inputs.parameters.LLM_NAME}} \
+              --collection_name {{workflow.parameters.collection-name}} \
+              --job_id {{workflow.parameters.job-id}} \
+              --batch_size {{workflow.parameters.batch-size}}"
+
+            if [ "{{workflow.parameters.input-url}}" != "" ]; then
+              CMD="$CMD --input_url {{workflow.parameters.input-url}}"
+            fi
+
+            echo "Executing: $CMD"
+            eval $CMD
+        volumeMounts:
+          - mountPath: /dev/shm
+            name: dshm
+        env: *common-env
+
+    # =========================================================================
+    # Aggregate — read run IDs written to S3 by each encode task and decide
+    #             whether the ensemble step should run.
+    # =========================================================================
+    - name: aggregate-run-ids
+      inputs:
+        parameters:
+          - name: params-conf-list
+          - name: experiment-name
+          - name: mode
+      outputs:
+        parameters:
+          - name: should-ensemble
+            valueFrom:
+              path: /tmp/should_ensemble.txt
+          - name: run-ids
+            valueFrom:
+              path: /tmp/run_ids.txt
+      container:
+        image: inseefrlab/onyxia-vscode-pytorch:py3.12.11-gpu
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            pip install s3fs -q
+
+            cat > /tmp/aggregate.py << 'PYEOF'
+            import json, os
+            import s3fs
+
+            params = json.loads(os.environ["PARAMS"])
+            experiment = os.environ["EXPERIMENT"]
+            mode = os.environ["MODE"]
+            fs = s3fs.S3FileSystem(
+                client_kwargs={"endpoint_url": f"https://{os.environ['AWS_S3_ENDPOINT']}"},
+                key=os.environ["AWS_ACCESS_KEY_ID"],
+                secret=os.environ["AWS_SECRET_ACCESS_KEY"],
+            )
+
+            # Ensemble runs when there are several models, or always in prod
+            # (single-model prod still needs the final file written to S3).
+            should = len(params) > 1 or mode == "prod"
+
+            run_ids = []
+            if should:
+                for item in params:
+                    llm_name = item["LLM_NAME"].replace("/", "_")
+                    path = f"projet-ape/NAF-revision/run_ids/{experiment}/{llm_name}.txt"
+                    with fs.open(path) as f:
+                        run_ids.append(f.read().decode().strip())
+
+            open("/tmp/should_ensemble.txt", "w").write("true" if should else "false")
+            open("/tmp/run_ids.txt", "w").write(",".join(run_ids))
+            print(f"should_ensemble={should} run_ids={run_ids}")
+            PYEOF
+
+            python3 /tmp/aggregate.py
+        env:
+          - name: PARAMS
+            value: "{{inputs.parameters.params-conf-list}}"
+          - name: EXPERIMENT
+            value: "{{inputs.parameters.experiment-name}}"
+          - name: MODE
+            value: "{{inputs.parameters.mode}}"
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: my-s3-creds
+                key: accessKey
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-s3-creds
+                key: secretKey
+          - name: AWS_S3_ENDPOINT
+            value: minio.lab.sspcloud.fr
+
+    # =========================================================================
+    # Step 4 — majority-vote ensemble across all model predictions
+    # =========================================================================
+    - name: run-ensemble
+      inputs:
+        parameters:
+          - name: RUN_IDS
+      container:
+        <<: *cpu-container
+        args:
+          - |
+            git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
+            cd codif-ape-nace-revision/
+            git checkout {{workflow.parameters.branch}}
+            uv sync
+
+            CMD="uv run src/4_ensemble_predictions.py \
+              --run_ids {{inputs.parameters.RUN_IDS}} \
+              --mode {{workflow.parameters.mode}}"
+
+            if [ "{{workflow.parameters.mode}}" = "prod" ]; then
+              CMD="$CMD --export"
+            fi
+
+            echo "Executing: $CMD"
+            eval $CMD
+
+    # =========================================================================
+    # Step 5 — build the final NACE 2025 dataset (prod)
+    # =========================================================================
+    - name: build-final
+      container:
+        <<: *cpu-container
+        args:
+          - |
+            git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
+            cd codif-ape-nace-revision/
+            git checkout {{workflow.parameters.branch}}
+            uv sync
+
+            CMD="uv run src/5_build_nace2025_sirene4.py"
+            if [ "{{workflow.parameters.input-url}}" != "" ]; then
+              CMD="$CMD --input_url {{workflow.parameters.input-url}}"
+            fi
+            echo "Executing: $CMD"
+            eval $CMD

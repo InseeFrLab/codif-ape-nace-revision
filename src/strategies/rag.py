@@ -217,8 +217,14 @@ class RAGStrategy(EncodeStrategy):
         Placeholders {i} and {third} must be filled later.
         """
         date = datetime.now().strftime("%Y-%m-%d--%H:%M")
+        return f"{self.results_base_dir}/part-{{i}}-{{third}}--{date}.parquet"
+
+    @property
+    def results_base_dir(self) -> str:
+        """Stable per-model directory (no timestamp) used as the root for
+        resumable batched runs."""
         model_dir = f"{self.generation_model}-thinking" if self.thinking else self.generation_model
-        return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{model_dir}/part-{{i}}-{{third}}--{date}.parquet"
+        return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{model_dir}"
 
     def _format_documents(self, docs: List[ScoredPoint]) -> Tuple[str, str]:
         """

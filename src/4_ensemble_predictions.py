@@ -2,19 +2,18 @@
 Evaluate and combine LLM predictions for ambiguous NAF codes.
 
 This script:
-  1. Fetches the 3 MLflow runs listed in `RUN_IDS` and reads their
+  1. Fetches the MLflow runs listed in --run_ids and reads their
      `output_path` param to locate each model's predictions parquet.
   2. Loads each parquet and aligns predictions across models on
      `liasse_numero`.
   3. Combines them with the majority-voting ensemble strategy.
-  4. Compares individual and ensemble predictions against the manual
-     ground truth, both raw and filtered (codable, mapping_ok).
-  5. Exports the voting predictions as the final NAF2025 file.
+  4. In eval mode: compares individual and ensemble predictions against
+     the manual ground truth and writes a Markdown report.
+  5. In prod mode (--export): writes the voting predictions to S3.
 """
 
 import logging
 import os
-# os.chdir("codif-ape-nace-revision/src")
 from datetime import datetime
 from typing import Dict, List, Tuple
 
@@ -39,25 +38,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# Configuration
-# ============================================================================
-
 VAR_TO_KEEP = ["liasse_numero", "nace2025", "codable"]
 LEVELS = [5, 4, 3, 2, 1]
 ENSEMBLE_METHODS = ["voting_label"]
-
-# Toggle to True once accuracies have been reviewed and the final
-# parquet should be written to S3.
-EXPORT_FINAL = False
-
-# MLflow run IDs of the 3 models to combine. Each run logs an `output_path`
-# param pointing to the predictions parquet on S3 (see `3_encode_ambiguous.py`).
-RUN_IDS: List[str] = [
-    "d230d79c0387495c90413e4671f67a66",
-    "96033a8398784a04b916a58962f93b95",
-    "23ddbe5db64545d985d7477ce7b118af",
-]
 
 
 # ============================================================================
@@ -76,7 +59,6 @@ def fetch_models_from_mlflow(run_ids: List[str]) -> Dict[str, Dict]:
     for run_id in run_ids:
         run = mlflow.get_run(run_id)
         params = run.data.params
-        # MLflow stores params as strings — handle the bool literal.
         thinking = str(params.get("THINKING", "False")).lower() == "true"
         llm_name = params.get("LLM_MODEL", run_id)
         key = f"{llm_name}-thinking" if thinking else llm_name
@@ -179,15 +161,8 @@ def export_final_predictions(merged_df: pd.DataFrame, fs) -> str:
     )
     timestamp = datetime.now().strftime("%Y%m%d")
     output_path = f"{URL_SIRENE4_AMBIGUOUS_FINAL}{timestamp}_sirene4_ambiguous.parquet"
-
-    if EXPORT_FINAL:
-        final_df.to_parquet(output_path, filesystem=fs)
-        logger.info("Final results exported to %s", output_path)
-    else:
-        logger.info(
-            "Export skipped (EXPORT_FINAL=False). Target path would be: %s",
-            output_path,
-        )
+    final_df.to_parquet(output_path, filesystem=fs)
+    logger.info("Final results exported to %s", output_path)
     return output_path
 
 
@@ -207,11 +182,22 @@ def write_report(report_md: str) -> str:
     return path
 
 
-def main() -> None:
+def main(run_ids: List[str], mode: str = "eval", export: bool = False) -> None:
     fs = get_file_system()
 
-    logger.info("Fetching %d run(s) from MLflow", len(RUN_IDS))
-    models = fetch_models_from_mlflow(RUN_IDS)
+    logger.info("===== STEP 4: ensemble predictions (mode=%s) =====", mode)
+    logger.info("Fetching %d run(s) from MLflow", len(run_ids))
+    models = fetch_models_from_mlflow(run_ids)
+
+    # Each model's predictions directory is logged here as an explicit input.
+    for name, cfg in models.items():
+        logger.info("INPUT  : %s (%s)", cfg["path"], name)
+    if mode == "eval":
+        logger.info("INPUT  : %s (ground truth)", URL_GROUND_TRUTH)
+    logger.info(
+        "OUTPUT : %s",
+        f"{URL_SIRENE4_AMBIGUOUS_FINAL} (final predictions)" if export else "report only (no export)",
+    )
 
     logger.info("Loading predictions from %d model(s)", len(models))
     dfs = load_predictions(models, fs)
@@ -224,32 +210,60 @@ def main() -> None:
     )
     merged_df, model_columns = apply_ensemble_strategies(merged_df, models)
 
-    logger.info("Loading ground truth")
-    eval_df = merged_df.merge(load_ground_truth(fs), on="liasse_numero", how="inner")
+    if export:
+        export_final_predictions(merged_df, fs)
 
-    logger.info("Computing accuracies")
-    accuracies = compute_all_accuracies(eval_df, list(models))
-    agreement = get_model_agreement_stats(eval_df, model_columns)
+    if mode == "eval":
+        logger.info("Loading ground truth")
+        eval_df = merged_df.merge(load_ground_truth(fs), on="liasse_numero", how="inner")
 
-    logger.info("Raw accuracies: %s", accuracies["raw"])
-    logger.info("Codable accuracies: %s", accuracies["codable"])
-    logger.info("Mapping-ok accuracies: %s", accuracies["mapping_ok"])
-    logger.info("Model agreement statistics: %s", agreement)
+        logger.info("Computing accuracies")
+        accuracies = compute_all_accuracies(eval_df, list(models))
+        agreement = get_model_agreement_stats(eval_df, model_columns)
 
-    final_output_path = export_final_predictions(merged_df, fs)
+        logger.info("Raw accuracies: %s", accuracies["raw"])
+        logger.info("Codable accuracies: %s", accuracies["codable"])
+        logger.info("Mapping-ok accuracies: %s", accuracies["mapping_ok"])
+        logger.info("Model agreement statistics: %s", agreement)
 
-    report_md = build_ensemble_report(
-        models=models,
-        accuracies=accuracies,
-        agreement=agreement,
-        levels=LEVELS,
-        ensemble_methods=ENSEMBLE_METHODS,
-        eval_size=len(eval_df),
-        final_output_path=final_output_path,
-        export_final=EXPORT_FINAL,
-    )
-    write_report(report_md)
+        report_md = build_ensemble_report(
+            models=models,
+            accuracies=accuracies,
+            agreement=agreement,
+            levels=LEVELS,
+            ensemble_methods=ENSEMBLE_METHODS,
+            eval_size=len(eval_df),
+            final_output_path=None,
+            export_final=export,
+        )
+        write_report(report_md)
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--run_ids",
+        type=str,
+        required=True,
+        help="Comma-separated MLflow run IDs to combine.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["prod", "eval"],
+        default="eval",
+        help="eval: compute accuracy metrics and write a report. prod: export predictions only.",
+    )
+    parser.add_argument(
+        "--export",
+        action="store_true",
+        help="Write the majority-voting predictions to S3.",
+    )
+    args = parser.parse_args()
+
+    run_ids = [r.strip() for r in args.run_ids.split(",") if r.strip()]
+    if not run_ids:
+        parser.error("--run_ids must contain at least one run ID")
+
+    main(run_ids=run_ids, mode=args.mode, export=args.export)
