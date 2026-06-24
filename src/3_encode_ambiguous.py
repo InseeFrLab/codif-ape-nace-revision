@@ -8,7 +8,7 @@ from datetime import datetime
 import mlflow
 
 import config
-from constants.paths import URL_SIRENE4_EXTRACTION
+from constants.paths import URL_SIRENE4_EXTRACTION, URL_WORKFLOW_AMBIGUOUS
 from evaluation.evaluator import Evaluator
 from strategies.base import EncodeStrategy
 from strategies.cag import CAGStrategy
@@ -67,7 +67,8 @@ async def run_encode(
         if data.empty:
             raise ValueError("No data to encode after loading/filtering.")
 
-        paths = BatchPaths(strategy.results_base_dir, job_id)
+        ambiguous_dir = f"{URL_WORKFLOW_AMBIGUOUS.format(job_id=job_id)}/{strategy.model_subdir}"
+        paths = BatchPaths(ambiguous_dir)
         logging.info("===== STEP 3: encode ambiguous (%s, mode=%s) =====", strategy.__class__.__name__, mode)
         logging.info("INPUT  : %s", input_url or URL_SIRENE4_EXTRACTION)
         logging.info("OUTPUT : %s (job_id=%s)", paths.results_dir, job_id)
@@ -85,7 +86,7 @@ async def run_encode(
             mode=mode, output_path=paths.results_dir, input_url=input_url,
             prompts=prompts, run_name=run_name, sample_size=sample_size,
         )
-        write_run_id_to_s3(experiment_name, llm_name, mlflow.active_run().info.run_id)
+        write_run_id_to_s3(job_id, llm_name, mlflow.active_run().info.run_id)
 
 
 def _initialize_strategy(
@@ -114,7 +115,9 @@ def _load_data(strategy, third, mode, input_url=None, sample_size=None):
     # prod mode: input_url=<path> → uses the provided file, no ground-truth filter
     data = get_ambiguous_data(strategy.mapping, third, input_url if mode == "prod" else None, VAR_TO_KEEP)
     if sample_size is not None:
-        data = data.sample(n=sample_size).reset_index(drop=True)
+        # Seeded so batch boundaries stay reproducible across resumes (same
+        # job_id + sample_size => same sampled rows => resumable).
+        data = data.sample(n=sample_size, random_state=2025).reset_index(drop=True)
     return data
 
 
@@ -310,11 +313,8 @@ if __name__ == "__main__":
     if args.mode == "prod" and args.input_url is None:
         parser.error("--input_url is required in prod mode")
 
-    # Random sampling makes batch boundaries non-deterministic, so a sampled run
-    # cannot be resumed against an explicit job_id.
-    if args.sample_size is not None and args.job_id is not None:
-        parser.error("--sample_size cannot be combined with --job_id (non-resumable).")
-
+    # Sampling is seeded (see _load_data), so a sampled run is still resumable
+    # against the same job_id — no mutual exclusion needed.
     if args.job_id is None:
         args.job_id = datetime.now().strftime("run-%Y%m%d-%H%M%S")
         logging.info("No --job_id provided — fresh run (no resume). job_id=%s", args.job_id)

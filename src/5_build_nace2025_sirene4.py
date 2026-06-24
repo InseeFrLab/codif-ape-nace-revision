@@ -1,10 +1,11 @@
 """Step 5 — assemble the final NACE 2025 SIRENE 4 dataset.
 
 Combines the three sources of NAF 2025 codes into a single deduplicated table:
-  - univocal rewrites           (step 2 output, URL_SIRENE4_UNIVOCAL)
-  - LLM predictions (ambiguous) (step 4 output, URL_SIRENE4_AMBIGUOUS_FINAL)
+  - univocal rewrites           (step 2 output, URL_WORKFLOW_UNIVOCAL)
+  - LLM predictions (ambiguous) (step 4 output, URL_WORKFLOW_ENSEMBLE)
   - human annotations           (ground truth, URL_GROUND_TRUTH)
 
+All step inputs/outputs are scoped by --job_id under the run directory.
 Auxiliary descriptive variables are re-attached from the source extraction.
 """
 
@@ -16,10 +17,10 @@ import pandas as pd
 import config
 from constants.paths import (
     URL_GROUND_TRUTH,
-    URL_SIRENE4_AMBIGUOUS_FINAL,
     URL_SIRENE4_EXTRACTION,
-    URL_SIRENE4_NACE2025,
-    URL_SIRENE4_UNIVOCAL,
+    URL_WORKFLOW_ENSEMBLE,
+    URL_WORKFLOW_FINAL,
+    URL_WORKFLOW_UNIVOCAL,
 )
 from utils.data import get_file_system
 
@@ -40,10 +41,14 @@ VAR_TO_KEEP = [
 ]
 
 
-def build_nace2025_sirene4(input_url: str, output_url: str):
+def build_nace2025_sirene4(input_url: str, job_id: str, output_url: str = None):
+    univocal_url = URL_WORKFLOW_UNIVOCAL.format(job_id=job_id)
+    ambiguous_url = URL_WORKFLOW_ENSEMBLE.format(job_id=job_id)
+    output_url = output_url or URL_WORKFLOW_FINAL.format(job_id=job_id)
+
     logger.info("===== STEP 5: build final NACE 2025 dataset =====")
-    logger.info("INPUT  : %s (univocal)", URL_SIRENE4_UNIVOCAL)
-    logger.info("INPUT  : %s (ambiguous, LLM)", URL_SIRENE4_AMBIGUOUS_FINAL)
+    logger.info("INPUT  : %s (univocal)", univocal_url)
+    logger.info("INPUT  : %s (ambiguous, LLM)", ambiguous_url)
     logger.info("INPUT  : %s (ground truth)", URL_GROUND_TRUTH)
     logger.info("INPUT  : %s (auxiliary variables)", input_url)
     logger.info("OUTPUT : %s", output_url)
@@ -51,7 +56,7 @@ def build_nace2025_sirene4(input_url: str, output_url: str):
     fs = get_file_system()
 
     # Univocal: drop duplicate liasse only
-    data_univocal = pd.read_parquet(URL_SIRENE4_UNIVOCAL, filesystem=fs)
+    data_univocal = pd.read_parquet(univocal_url, filesystem=fs)
     data_univocal = data_univocal.drop_duplicates(subset="liasse_numero")
 
     # Ambiguous (human annotation): drop duplicate liasse, rename apet_manual → nace2025
@@ -63,7 +68,7 @@ def build_nace2025_sirene4(input_url: str, output_url: str):
     data_ambiguous_ground_truth = data_ambiguous_ground_truth.drop_duplicates(subset="liasse_numero")
 
     # Ambiguous (LLM): drop rows already covered by human annotation
-    data_ambiguous = pd.read_parquet(URL_SIRENE4_AMBIGUOUS_FINAL, filesystem=fs)
+    data_ambiguous = pd.read_parquet(ambiguous_url, filesystem=fs)
     data_ambiguous = data_ambiguous.loc[
         ~data_ambiguous["liasse_numero"].isin(data_ambiguous_ground_truth["liasse_numero"].tolist())
     ]
@@ -120,14 +125,21 @@ if __name__ == "__main__":
         help="S3 path of the source extraction (auxiliary variables). Defaults to URL_SIRENE4_EXTRACTION.",
     )
     parser.add_argument(
+        "--job_id",
+        type=str,
+        required=True,
+        help="Run id scoping all workflow outputs (locates univocal + ensemble inputs and the final output).",
+    )
+    parser.add_argument(
         "--output_url",
         type=str,
-        default=URL_SIRENE4_NACE2025,
-        help="S3 path of the final NACE 2025 dataset to write.",
+        default=None,
+        help="S3 path of the final NACE 2025 dataset. Defaults to the job-scoped path.",
     )
     args = parser.parse_args()
 
     build_nace2025_sirene4(
         input_url=args.input_url or URL_SIRENE4_EXTRACTION,
+        job_id=args.job_id,
         output_url=args.output_url,
     )

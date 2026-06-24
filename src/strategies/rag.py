@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -9,7 +8,7 @@ from qdrant_client.http.models import NamedVector, ScoredPoint, SearchRequest
 from tqdm.asyncio import tqdm
 
 from constants.llm import MAX_NEW_TOKEN_FAST, MAX_NEW_TOKEN_THINKING, TEMPERATURE
-from constants.paths import URL_PROMPTS_RAG, URL_SIRENE4_AMBIGUOUS_RAG
+from constants.paths import URL_PROMPTS_RAG
 from utils.data import get_file_system, load_prompts, prompts_to_df
 from vector_db.loading import get_retriever
 
@@ -207,24 +206,6 @@ class RAGStrategy(EncodeStrategy):
         """Split a list into chunks of given size."""
         for i in range(0, len(seq), size):
             yield seq[i : i + size]
-
-    @property
-    def output_path(self) -> str:
-        """
-        Returns a Parquet output path template including model name and timestamp.
-        Thinking runs are stored under a `<model>-thinking` folder to avoid
-        collisions with non-thinking runs of the same base model.
-        Placeholders {i} and {third} must be filled later.
-        """
-        date = datetime.now().strftime("%Y-%m-%d--%H:%M")
-        return f"{self.results_base_dir}/part-{{i}}-{{third}}--{date}.parquet"
-
-    @property
-    def results_base_dir(self) -> str:
-        """Stable per-model directory (no timestamp) used as the root for
-        resumable batched runs."""
-        model_dir = f"{self.generation_model}-thinking" if self.thinking else self.generation_model
-        return f"{URL_SIRENE4_AMBIGUOUS_RAG}/{model_dir}"
 
     def _format_documents(self, docs: List[ScoredPoint]) -> Tuple[str, str]:
         """

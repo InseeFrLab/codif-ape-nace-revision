@@ -7,8 +7,6 @@ from typing import Any, Dict, List, Optional, Union
 
 import httpx
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
 from openai.types.chat import ParsedChatCompletion
 from pydantic import BaseModel
@@ -66,28 +64,16 @@ class EncodeStrategy(ABC):
         pass
 
     @property
-    @abstractmethod
-    def output_path(self) -> str:
-        """Each strategy defines its output path."""
-        pass
+    def model_subdir(self) -> str:
+        """Folder name for this model's outputs under the run's `ambiguous/` dir.
+        Thinking runs get a `-thinking` suffix so they don't collide with the
+        non-thinking run of the same base model."""
+        return f"{self.generation_model}-thinking" if self.thinking else self.generation_model
 
     def postprocess_results(self, df):
         """Default postprocess: remove dots from 'nace2025'."""
         df["nace2025"] = df["nace2025"].str.replace(".", "", regex=False)
         return df
-
-    def save_results(self, df: pd.DataFrame, third: int) -> str:
-        """Save the results to the specified output path."""
-        output_path = self.output_path.format(third=f"{third}" if third else "", i="{i}")
-
-        pq.write_to_dataset(
-            pa.Table.from_pandas(df),
-            root_path="/".join(output_path.split("/")[:-1]),
-            basename_template=output_path.split("/")[-1],
-            existing_data_behavior="overwrite_or_ignore",
-            filesystem=self.fs,
-        )
-        return output_path.format(i=0)
 
     def _format_activity_description(self, row: Any) -> str:
         """

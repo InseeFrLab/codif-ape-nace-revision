@@ -11,7 +11,7 @@ from constants.paths import (
     URL_EXPLANATORY_NOTES,
     URL_MAPPING_TABLE,
     URL_SIRENE4_EXTRACTION,
-    URL_SIRENE4_UNIVOCAL,
+    URL_WORKFLOW_UNIVOCAL,
 )
 from mappings.mappings import get_mapping
 from utils.data import get_file_system
@@ -96,14 +96,23 @@ if __name__ == "__main__":
         help="S3 path of the source extraction. Defaults to URL_SIRENE4_EXTRACTION.",
     )
     parser.add_argument(
+        "--job_id",
+        type=str,
+        default=None,
+        help="Run id scoping all workflow outputs. Used to derive --output_url when omitted.",
+    )
+    parser.add_argument(
         "--output_url",
         type=str,
-        default=URL_SIRENE4_UNIVOCAL,
-        help="S3 path of the univocal predictions Parquet to write.",
+        default=None,
+        help="S3 path of the univocal predictions Parquet. Defaults to the job-scoped path.",
     )
     args = parser.parse_args()
 
+    if args.output_url is None and args.job_id is None:
+        parser.error("provide --job_id (to derive the output path) or an explicit --output_url")
+
     encode_unambiguous(
         input_url=args.input_url or URL_SIRENE4_EXTRACTION,
-        output_url=args.output_url,
+        output_url=args.output_url or URL_WORKFLOW_UNIVOCAL.format(job_id=args.job_id),
     )

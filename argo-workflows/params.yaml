@@ -26,6 +26,10 @@ job-id: "job-001"
 # Rows per batch in step 3 (prompts built, LLM-called and committed together)
 batch-size: "1000"
 
+# Step 3 only: sample N rows for a quick test run. "" = full dataset.
+# Sampling is seeded, so a sampled run is still resumable with the same job-id.
+sample-size: ""
+
 # Qdrant collection used by the RAG strategy (and built by step 1)
 collection-name: "embeddings_qwen"
 
@@ -37,8 +41,10 @@ build-vector-db: "false"
 
 # JSON list of models. A single-item list skips voting in eval mode
 # (in prod the ensemble step always runs to write the final file).
+# NB: this block is parsed as JSON — pas de commentaires "#" à l'intérieur.
+# Modèles disponibles à (dé)commenter ici, hors du bloc JSON :
+#   {"LLM_NAME": "gemma4-26b-moe"}
 params-conf-list: |
   [
-    {"LLM_NAME": "qwen3-6-35b-moe"},
-    #{"LLM_NAME": "gemma4-26b-moe"}
+    {"LLM_NAME": "qwen3-6-35b-moe"}
   ]

@@ -1,13 +1,15 @@
 """Resumable batched encoding: stable S3 layout, per-batch IO, and resume helpers.
 
-Each run writes one Parquet part per batch under a stable, job-scoped directory:
+Each run writes one Parquet part per batch under a stable, per-model directory
+(itself job-scoped by the caller, e.g.
+`workflow_relabel/<job_id>/ambiguous/<model>`):
 
-    <base_dir>/<job_id>/results/part-XXXXX.parquet   (presence = batch committed)
-    <base_dir>/<job_id>/prompts/part-XXXXX.parquet
+    <root>/results/part-XXXXX.parquet   (presence = batch committed)
+    <root>/prompts/part-XXXXX.parquet
 
-Re-running with the same `job_id` skips batches whose results part already
-exists, so a crashed multi-hour run resumes where it stopped. Batch boundaries
-are deterministic given identical, deterministically-ordered input data.
+Re-running against the same `<root>` (same job_id) skips batches whose results
+part already exists, so a crashed multi-hour run resumes where it stopped. Batch
+boundaries are deterministic given identical, deterministically-ordered input.
 """
 
 import logging
@@ -26,10 +28,13 @@ def _strip_scheme(path: str) -> str:
 
 
 class BatchPaths:
-    """Stable, resumable S3 layout for one (model, job_id) encoding run."""
+    """Stable, resumable S3 layout rooted at one per-model encoding directory.
 
-    def __init__(self, base_dir: str, job_id: str):
-        self.root = f"{base_dir}/{job_id}"
+    `root` is already job-scoped by the caller (it sits under the run's
+    `workflow_relabel/<job_id>/ambiguous/<model>` directory)."""
+
+    def __init__(self, root: str):
+        self.root = root
         self.results_dir = f"{self.root}/results"
         self.prompts_dir = f"{self.root}/prompts"
 

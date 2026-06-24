@@ -22,7 +22,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 import config
-from constants.paths import URL_GROUND_TRUTH, URL_SIRENE4_AMBIGUOUS_FINAL
+from constants.paths import URL_GROUND_TRUTH, URL_WORKFLOW_ENSEMBLE
 from utils.data import fetch_mapping, get_file_system, merge_dataframes
 from utils.ensemble_report import build_ensemble_report
 from utils.strategies import (
@@ -154,13 +154,12 @@ def compute_all_accuracies(
     return {"raw": raw, "codable": codable, "mapping_ok": mapping_ok}
 
 
-def export_final_predictions(merged_df: pd.DataFrame, fs) -> str:
-    """Write the majority-voting predictions to S3 and return the output path."""
+def export_final_predictions(merged_df: pd.DataFrame, fs, job_id: str) -> str:
+    """Write the majority-voting predictions to the run's ensemble dir, return the path."""
     final_df = merged_df[["liasse_numero", "nace2025_voting_label"]].rename(
         columns={"nace2025_voting_label": "nace2025"}
     )
-    timestamp = datetime.now().strftime("%Y%m%d")
-    output_path = f"{URL_SIRENE4_AMBIGUOUS_FINAL}{timestamp}_sirene4_ambiguous.parquet"
+    output_path = URL_WORKFLOW_ENSEMBLE.format(job_id=job_id)
     final_df.to_parquet(output_path, filesystem=fs)
     logger.info("Final results exported to %s", output_path)
     return output_path
@@ -182,7 +181,7 @@ def write_report(report_md: str) -> str:
     return path
 
 
-def main(run_ids: List[str], mode: str = "eval", export: bool = False) -> None:
+def main(run_ids: List[str], mode: str = "eval", export: bool = False, job_id: str = None) -> None:
     fs = get_file_system()
 
     logger.info("===== STEP 4: ensemble predictions (mode=%s) =====", mode)
@@ -196,7 +195,7 @@ def main(run_ids: List[str], mode: str = "eval", export: bool = False) -> None:
         logger.info("INPUT  : %s (ground truth)", URL_GROUND_TRUTH)
     logger.info(
         "OUTPUT : %s",
-        f"{URL_SIRENE4_AMBIGUOUS_FINAL} (final predictions)" if export else "report only (no export)",
+        f"{URL_WORKFLOW_ENSEMBLE.format(job_id=job_id)} (final predictions)" if export else "report only (no export)",
     )
 
     logger.info("Loading predictions from %d model(s)", len(models))
@@ -211,7 +210,7 @@ def main(run_ids: List[str], mode: str = "eval", export: bool = False) -> None:
     merged_df, model_columns = apply_ensemble_strategies(merged_df, models)
 
     if export:
-        export_final_predictions(merged_df, fs)
+        export_final_predictions(merged_df, fs, job_id)
 
     if mode == "eval":
         logger.info("Loading ground truth")
@@ -260,10 +259,19 @@ if __name__ == "__main__":
         action="store_true",
         help="Write the majority-voting predictions to S3.",
     )
+    parser.add_argument(
+        "--job_id",
+        type=str,
+        default=None,
+        help="Run id scoping all workflow outputs; required with --export (defines the output path).",
+    )
     args = parser.parse_args()
 
     run_ids = [r.strip() for r in args.run_ids.split(",") if r.strip()]
     if not run_ids:
         parser.error("--run_ids must contain at least one run ID")
 
-    main(run_ids=run_ids, mode=args.mode, export=args.export)
+    if args.export and args.job_id is None:
+        parser.error("--job_id is required with --export (defines the output path)")
+
+    main(run_ids=run_ids, mode=args.mode, export=args.export, job_id=args.job_id)

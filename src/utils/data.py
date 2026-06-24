@@ -278,10 +278,11 @@ def prompts_to_df(prompts: List[List[Dict]]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def write_run_id_to_s3(experiment_name: str, llm_name: str, run_id: str) -> None:
-    """Write a MLflow run ID to S3 so the ensemble step can retrieve it."""
+def write_run_id_to_s3(job_id: str, llm_name: str, run_id: str) -> None:
+    """Write a MLflow run ID under the run's job-scoped dir so the aggregate /
+    ensemble step can retrieve it."""
     safe_name = llm_name.replace("/", "_")
-    path = URL_RUN_ID.format(experiment_name=experiment_name, llm_name=safe_name)
+    path = URL_RUN_ID.format(job_id=job_id, llm_name=safe_name)
     fs = get_file_system()
     with fs.open(path.replace("s3://", ""), "w") as f:
         f.write(run_id)

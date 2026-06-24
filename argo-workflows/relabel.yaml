@@ -18,6 +18,7 @@ spec:
       - name: branch            # git branch to checkout
       - name: job-id            # stable id; resubmit with the SAME value to resume a crashed run
       - name: batch-size        # rows per batch in step 3
+      - name: sample-size       # step 3: sample N rows for a quick test ("" = full run)
       - name: collection-name   # Qdrant collection (RAG)
       - name: embedding-model   # embedding model for step 1 (empty = script default)
       - name: build-vector-db   # "true" to (re)build the vector DB in step 1 (RAG only)
@@ -129,8 +130,8 @@ spec:
               parameters:
                 - name: params-conf-list
                   value: "{{workflow.parameters.params-conf-list}}"
-                - name: experiment-name
-                  value: "{{workflow.parameters.experiment-name}}"
+                - name: job-id
+                  value: "{{workflow.parameters.job-id}}"
                 - name: mode
                   value: "{{workflow.parameters.mode}}"
 
@@ -198,7 +199,7 @@ spec:
             git checkout {{workflow.parameters.branch}}
             uv sync
 
-            CMD="uv run src/2_encode_unambiguous.py"
+            CMD="uv run src/2_encode_unambiguous.py --job_id {{workflow.parameters.job-id}}"
             if [ "{{workflow.parameters.input-url}}" != "" ]; then
               CMD="$CMD --input_url {{workflow.parameters.input-url}}"
             fi
@@ -233,6 +234,9 @@ spec:
             if [ "{{workflow.parameters.input-url}}" != "" ]; then
               CMD="$CMD --input_url {{workflow.parameters.input-url}}"
             fi
+            if [ "{{workflow.parameters.sample-size}}" != "" ]; then
+              CMD="$CMD --sample_size {{workflow.parameters.sample-size}}"
+            fi
 
             echo "Executing: $CMD"
             eval $CMD
@@ -240,13 +244,13 @@ spec:
     # =========================================================================
     # Aggregate — read run IDs written to S3 by each encode task and decide
     #             whether the ensemble step should run. Overrides resources
-    #             (small) and env (adds PARAMS/EXPERIMENT/MODE).
+    #             (small) and env (adds PARAMS/JOB_ID/MODE).
     # =========================================================================
     - name: aggregate-run-ids
       inputs:
         parameters:
           - name: params-conf-list
-          - name: experiment-name
+          - name: job-id
           - name: mode
       outputs:
         parameters:
@@ -273,7 +277,7 @@ spec:
             import s3fs
 
             params = json.loads(os.environ["PARAMS"])
-            experiment = os.environ["EXPERIMENT"]
+            job_id = os.environ["JOB_ID"]
             mode = os.environ["MODE"]
             fs = s3fs.S3FileSystem(
                 client_kwargs={"endpoint_url": f"https://{os.environ['AWS_S3_ENDPOINT']}"},
@@ -289,7 +293,7 @@ spec:
             if should:
                 for item in params:
                     llm_name = item["LLM_NAME"].replace("/", "_")
-                    path = f"projet-ape/NAF-revision/run_ids/{experiment}/{llm_name}.txt"
+                    path = f"projet-ape/NAF-revision/workflow_relabel/{job_id}/run_ids/{llm_name}.txt"
                     with fs.open(path) as f:
                         run_ids.append(f.read().decode().strip())
 
@@ -302,8 +306,8 @@ spec:
         env:
           - name: PARAMS
             value: "{{inputs.parameters.params-conf-list}}"
-          - name: EXPERIMENT
-            value: "{{inputs.parameters.experiment-name}}"
+          - name: JOB_ID
+            value: "{{inputs.parameters.job-id}}"
           - name: MODE
             value: "{{inputs.parameters.mode}}"
           - name: AWS_ACCESS_KEY_ID
@@ -337,7 +341,8 @@ spec:
 
             CMD="uv run src/4_ensemble_predictions.py \
               --run_ids {{inputs.parameters.RUN_IDS}} \
-              --mode {{workflow.parameters.mode}}"
+              --mode {{workflow.parameters.mode}} \
+              --job_id {{workflow.parameters.job-id}}"
 
             if [ "{{workflow.parameters.mode}}" = "prod" ]; then
               CMD="$CMD --export"
@@ -359,7 +364,7 @@ spec:
             git checkout {{workflow.parameters.branch}}
             uv sync
 
-            CMD="uv run src/5_build_nace2025_sirene4.py"
+            CMD="uv run src/5_build_nace2025_sirene4.py --job_id {{workflow.parameters.job-id}}"
             if [ "{{workflow.parameters.input-url}}" != "" ]; then
               CMD="$CMD --input_url {{workflow.parameters.input-url}}"
             fi

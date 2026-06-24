@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -9,7 +8,7 @@ from tqdm.asyncio import tqdm
 
 from constants.data import NACE08_VAR
 from constants.llm import MAX_NEW_TOKEN_FAST, MAX_NEW_TOKEN_THINKING, TEMPERATURE
-from constants.paths import URL_PROMPTS_CAG, URL_SIRENE4_AMBIGUOUS_CAG
+from constants.paths import URL_PROMPTS_CAG
 from utils.data import get_file_system, prompts_to_df
 
 from .base import EncodeStrategy
@@ -74,18 +73,6 @@ class CAGStrategy(EncodeStrategy):
         if save:
             self._save_prompts(prompts)
         return prompts
-
-    @property
-    def output_path(self):
-        date = datetime.now().strftime("%Y-%m-%d--%H:%M")
-        return f"{self.results_base_dir}/part-{{i}}-{{third}}--{date}.parquet"
-
-    @property
-    def results_base_dir(self) -> str:
-        """Stable per-model directory (no timestamp) used as the root for
-        resumable batched runs."""
-        model_dir = f"{self.generation_model}-thinking" if self.thinking else self.generation_model
-        return f"{URL_SIRENE4_AMBIGUOUS_CAG}/{model_dir}"
 
     def postprocess_results(self, df):
         # Apply the base postprocessing first

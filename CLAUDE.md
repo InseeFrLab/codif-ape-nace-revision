@@ -55,6 +55,21 @@ uv run ruff check src/ && uv run ruff format src/ && uv run vulture src/
 
 Every step logs its inputs/outputs with explicit `INPUT  :` / `OUTPUT :` lines.
 
+### Output layout (job-scoped)
+
+The input file stays in place. **Every** intermediate and final output of a run lives under a single job-scoped root, one sub-folder per step (constants `URL_WORKFLOW_*` in `constants/paths.py`):
+
+```
+s3://projet-ape/NAF-revision/workflow_relabel/{job_id}/
+  ├── univocal/  sirene4_univoques.parquet      (step 2)
+  ├── ambiguous/ {model}/results|prompts/part-*  (step 3, one sub-dir per model)
+  ├── ensemble/  sirene4_ambiguous.parquet       (step 4)
+  ├── final/     sirene4_nace2025.parquet        (step 5)
+  └── run_ids/   {llm}.txt                         (step 3 → aggregate)
+```
+
+`--job_id` is the single key that scopes a run: steps 2/4/5 derive their paths from it; step 3 also uses it to resume. Concurrent runs use distinct `job_id`s and never collide.
+
 ## Architecture
 
 ### Strategy Pattern (`src/strategies/`)
@@ -107,5 +122,6 @@ Recent work, decisions made:
 - **Coherence fixes**: defined `URL_SIRENE4_UNIVOCAL`/`URL_SIRENE4_NACE2025`; fixed step 5 imports (`src.`→relative, `cache_models`→`data`); step 2/5 accept `--input_url`; step 3 passes `--collection_name` (RAG).
 - **Column names centralized** in `constants/data.py`. Resolved a latent bug where `activ_nat_lib_et_1`/`lib_cj` were used but never loaded — now included in `VAR_TO_KEEP` (option 2). `lib_cj` must be the *label*, not the `cj` code.
 - **Argo**: single `relabel.yaml` covering all steps; params externalized to `params.yaml`.
-
-Known caveats (not yet addressed): step 5 reads `URL_SIRENE4_AMBIGUOUS_FINAL` as a directory (cross-day files could mix); univocal/final output paths are fixed (concurrent prod runs would collide).
+- **Job-scoped outputs**: all intermediate + final outputs moved under `workflow_relabel/{job_id}/` (one sub-folder per step; see *Output layout* above). Steps 2/4/5 gained `--job_id`; `run_ids` and the ensemble output are now job-scoped (single file, not a dir). This resolved the two caveats below (fixed paths colliding across concurrent runs; step 5 reading a directory that mixed cross-day files).
+- **`--sample-size`** exposed at the Argo level (step 3 only) for quick test runs; sampling is seeded, so a sampled run is still resumable against the same `job_id`.
+- Removed dead `EncodeStrategy.save_results`/`output_path`; the per-model folder name now comes from `EncodeStrategy.model_subdir`.
