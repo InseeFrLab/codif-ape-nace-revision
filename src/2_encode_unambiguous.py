@@ -47,8 +47,15 @@ def encode_unambiguous(input_url: str, output_url: str):
 
     mapping = get_mapping(notes_ex, table_corres)
 
-    # Select all univoque codes
-    univoques = {code.code: code.naf2025[0].code for code in mapping if len(code.naf2025) == 1}
+    # Select all univoque codes. Mapping codes are dotted ("01.11Z") while the
+    # input NACE08_VAR column is validated dotless ("0111Z"), so strip dots on
+    # both the NAF08 key (to match the input) and the NAF2025 value (kept dotless,
+    # consistent with the ambiguous path's postprocessing).
+    univoques = {
+        code.code.replace(".", ""): code.naf2025[0].code.replace(".", "")
+        for code in mapping
+        if len(code.naf2025) == 1
+    }
     logger.info("Found %d univocal NAF 2008 codes to rewrite.", len(univoques))
 
     con = duckdb.connect(database=":memory:")
