@@ -6,6 +6,7 @@ import duckdb
 import pandas as pd
 
 import config
+from constants.data import ID_VAR, NACE08_VAR
 from constants.paths import (
     URL_EXPLANATORY_NOTES,
     URL_MAPPING_TABLE,
@@ -55,18 +56,18 @@ def encode_unambiguous(input_url: str, output_url: str):
     # Construct the CASE statement from the dictionary mapping
     case_statement = "CASE "
     for nace08, nace2025 in univoques.items():
-        case_statement += f"WHEN apet_finale = '{nace08}' THEN '{nace2025}' "
+        case_statement += f"WHEN {NACE08_VAR} = '{nace08}' THEN '{nace2025}' "
     case_statement += "ELSE NULL END AS nace2025"
 
     # SQL query with renamed column and new column using CASE for mapping
     query = f"""
         SELECT
-            liasse_numero,
+            {ID_VAR},
             {case_statement}
         FROM
             read_parquet('{input_url}')
         WHERE
-            apet_finale IN ('{"', '".join(univoques.keys())}')
+            {NACE08_VAR} IN ('{"', '".join(univoques.keys())}')
     """
 
     con.execute(

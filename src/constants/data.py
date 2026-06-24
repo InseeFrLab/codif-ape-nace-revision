@@ -7,7 +7,7 @@
 ID_VAR = "liasse_numero"
 
 # NAF 2008 (APE) code to recode.
-NACE08_VAR = "apet_finale"
+NACE08_VAR = "apet2008"
 
 # Free-text activity description (primary signal for the LLM).
 ACTIVITY_LABEL_VAR = "libelle"
@@ -17,8 +17,8 @@ ACTIVITY_LABEL_VAR = "libelle"
 # in VAR_TO_KEEP below, so these columns are always loaded from the source file.
 ACTIVITY_PRECISION_VARS = {
     "activ_sec_agri_et": "Précisions sur l'activité agricole",
-    "activ_nat_lib_et_1": "Autre nature d'activité",
-    "lib_cj": "Catégorie juridique de l'établissement",
+    "activ_nat_lib_et": "Autre nature d'activité",
+    "cj_libelle": "Catégorie juridique de l'établissement",
     "activ_surf_et_libelle" : "Surface commerciale"
 }
 
@@ -30,8 +30,8 @@ VAR_TO_KEEP = [
     NACE08_VAR,
     ACTIVITY_LABEL_VAR,
     *ACTIVITY_PRECISION_VARS,
-    "evenement_type",
-    "cj",
+    #"evenement_type",
+    #"cj",
     "activ_nat_et",
     "liasse_type",
     "activ_surf_et",

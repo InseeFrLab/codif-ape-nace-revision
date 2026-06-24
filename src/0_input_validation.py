@@ -3,7 +3,8 @@
 Checks, using DuckDB push-down queries (cheap even on large Parquet files):
   - every column required downstream (constants.data.VAR_TO_KEEP) is present;
   - `liasse_numero` and `libelle` are non-null/non-empty;
-  - `apet_finale` is a well-formed NAF 2008 code (4 digits + 1 uppercase letter).
+  - the NAF 2008 code column (constants.data.NACE08_VAR) is well-formed
+    (4 digits + 1 uppercase letter).
 
 Duplicate `liasse_numero` are tolerated (downstream uses DISTINCT ON) and only
 warned about. The step writes no data: it is a gate that raises on failure.
@@ -58,21 +59,24 @@ def validate_input(input_url: str) -> None:
     stats = load_data_from_s3(query).iloc[0].to_dict()
     logger.info("Rows: %s | distinct liasse: %s", stats["n_rows"], stats["liasse_distinct"])
     logger.info(
-        "Nulls — liasse_numero: %s, apet_finale: %s | apet bad format: %s | libelle empty: %s",
-        stats["liasse_null"], stats["apet_null"], stats["apet_bad_format"], stats["libelle_empty"],
+        "Nulls — %s: %s, %s: %s | %s bad format: %s | %s empty: %s",
+        ID_VAR, stats["liasse_null"],
+        NACE08_VAR, stats["apet_null"],
+        NACE08_VAR, stats["apet_bad_format"],
+        ACTIVITY_LABEL_VAR, stats["libelle_empty"],
     )
 
     errors = []
     if stats["n_rows"] == 0:
         errors.append("input file is empty")
     if stats["liasse_null"]:
-        errors.append(f"{stats['liasse_null']} rows with null liasse_numero")
+        errors.append(f"{stats['liasse_null']} rows with null {ID_VAR}")
     if stats["apet_null"]:
-        errors.append(f"{stats['apet_null']} rows with null apet_finale")
+        errors.append(f"{stats['apet_null']} rows with null {NACE08_VAR}")
     if stats["apet_bad_format"]:
-        errors.append(f"{stats['apet_bad_format']} rows with apet_finale not matching {NAF08_PATTERN}")
+        errors.append(f"{stats['apet_bad_format']} rows with {NACE08_VAR} not matching {NAF08_PATTERN}")
     if stats["libelle_empty"]:
-        errors.append(f"{stats['libelle_empty']} rows with empty libelle")
+        errors.append(f"{stats['libelle_empty']} rows with empty {ACTIVITY_LABEL_VAR}")
 
     duplicates = stats["n_rows"] - stats["liasse_distinct"]
     if duplicates:
