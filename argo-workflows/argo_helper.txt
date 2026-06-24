@@ -57,9 +57,7 @@ Dans les commandes ci-dessous, remplace <ns> par ton namespace
 Éditer d'abord argo-workflows/params.yaml (mode, input-url, job-id, modèles…),
 puis :
 
-    argo submit argo-workflows/relabel.yaml \
-        --parameter-file argo-workflows/params.yaml \
-        -n <ns> --watch
+argo submit relabel.yaml --parameter-file params.yaml -n projet-ape --watch
 
   --watch  affiche l'arbre des étapes en direct (Ctrl-C n'arrête PAS le run).
 

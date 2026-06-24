@@ -10,7 +10,7 @@ mode: "prod"
 strategy: "cag"
 
 # S3 path to the input parquet (prod mode only; leave empty "" for eval)
-input-url: ""
+input-url: "s3://projet-ape/data/22062026/naf2025/raw_auto.parquet"
 
 # MLflow experiment name
 experiment-name: "NACE2025_DATASET"

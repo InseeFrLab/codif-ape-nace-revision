@@ -4,11 +4,6 @@ metadata:
   name: run-relabel
 spec:
   serviceAccountName: workflow
-  volumes:
-    - name: dshm
-      emptyDir:
-        medium: Memory
-        sizeLimit: 64Gi
   entrypoint: main
   # Parameter VALUES live in argo-workflows/params.yaml and are supplied at
   # submit time via `--parameter-file` (see argo-workflows/argo_helper.txt).
@@ -27,6 +22,73 @@ spec:
       - name: embedding-model   # embedding model for step 1 (empty = script default)
       - name: build-vector-db   # "true" to (re)build the vector DB in step 1 (RAG only)
       - name: params-conf-list  # JSON list of models; single item skips voting in eval
+
+  # Defaults applied to every template's container. Previously expressed with
+  # YAML merge keys (<<: *anchor), but Argo's YAML parser (sigs.k8s.io/yaml)
+  # cannot handle merge keys and silently drops the whole document
+  # ("found nothing to lint"). templateDefaults is the native equivalent:
+  #   - the shared image/command/resources/env live here ONCE;
+  #   - templates inherit them and override only what differs (args,
+  #     inputs/outputs, and aggregate's smaller resources).
+  # No GPU: LLM calls go through the llm.lab provider, so all steps run on a
+  # plain CPU image.
+  templateDefaults:
+    container:
+      image: inseefrlab/onyxia-vscode-python:py3.13.12
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash", "-c"]
+      resources:
+        requests:
+          memory: 2Gi
+          cpu: 100m
+        limits:
+          memory: 50Gi
+          cpu: 15000m
+      env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: my-s3-creds
+              key: accessKey
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: my-s3-creds
+              key: secretKey
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_S3_ENDPOINT
+          value: minio.lab.sspcloud.fr
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token
+              key: token
+        - name: QDRANT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: qdrant-apikey
+              key: api-key
+        - name: LANGFUSE_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: publicKey
+        - name: LANGFUSE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: secretKey
+        - name: MLFLOW_S3_ENDPOINT_URL
+          value: https://minio.lab.sspcloud.fr
+        - name: MLFLOW_TRACKING_URI
+          value: https://projet-ape-mlflow.user.lab.sspcloud.fr/
+        - name: LANGFUSE_HOST
+          value: https://langfuse.lab.sspcloud.fr
+        - name: QDRANT_URL
+          value: https://projet-ape-qdrant.user.lab.sspcloud.fr/
+        - name: COLLECTION_NAME
+          value: "{{workflow.parameters.collection-name}}"
 
   templates:
     # =========================================================================
@@ -87,20 +149,10 @@ spec:
             when: "'{{workflow.parameters.mode}}' == 'prod'"
 
     # =========================================================================
-    # Step 0 — input validation (gate)
+    # Step 0 — input validation (gate). CPU defaults; env inherited.
     # =========================================================================
     - name: validate
-      container: &cpu-container
-        image: inseefrlab/onyxia-vscode-pytorch:py3.12.11-gpu
-        imagePullPolicy: IfNotPresent
-        resources:
-          limits:
-            cpu: 4000m
-            memory: 16Gi
-          requests:
-            cpu: 1000m
-            memory: 4Gi
-        command: ["/bin/bash", "-c"]
+      container:
         args:
           - |
             git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
@@ -114,82 +166,12 @@ spec:
             fi
             echo "Executing: $CMD"
             eval $CMD
-        env: &common-env
-          - name: AWS_ACCESS_KEY_ID
-            valueFrom:
-              secretKeyRef:
-                name: my-s3-creds
-                key: accessKey
-          - name: AWS_SECRET_ACCESS_KEY
-            valueFrom:
-              secretKeyRef:
-                name: my-s3-creds
-                key: secretKey
-          - name: AWS_DEFAULT_REGION
-            value: us-east-1
-          - name: AWS_S3_ENDPOINT
-            value: minio.lab.sspcloud.fr
-          - name: HF_TOKEN
-            valueFrom:
-              secretKeyRef:
-                name: hf-token
-                key: token
-          - name: QDRANT_API_KEY
-            valueFrom:
-              secretKeyRef:
-                name: qdrant-apikey
-                key: api-key
-          - name: LANGFUSE_PUBLIC_KEY
-            valueFrom:
-              secretKeyRef:
-                name: langfuse-secrets
-                key: publicKey
-          - name: LANGFUSE_SECRET_KEY
-            valueFrom:
-              secretKeyRef:
-                name: langfuse-secrets
-                key: secretKey
-          - name: MLFLOW_S3_ENDPOINT_URL
-            value: https://minio.lab.sspcloud.fr
-          - name: MLFLOW_TRACKING_URI
-            value: https://projet-ape-mlflow.user.lab.sspcloud.fr/
-          - name: LANGFUSE_HOST
-            value: https://langfuse.lab.sspcloud.fr
-          - name: QDRANT_URL
-            value: https://projet-ape-qdrant.user.lab.sspcloud.fr/
-          - name: COLLECTION_NAME
-            value: "{{workflow.parameters.collection-name}}"
-          - name: TORCH_CUDA_ARCH_LIST
-            value: "9.0"
-          - name: VLLM_USE_FLASHINFER_SAMPLER
-            value: "1"
 
     # =========================================================================
-    # Step 1 — build vector DB (RAG only, opt-in)
+    # Step 1 — build vector DB (RAG only, opt-in). Defaults; env inherited.
     # =========================================================================
     - name: build-vector-db
-      affinity: &gpu-affinity
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: nvidia.com/gpu.product
-                    operator: In
-                    values:
-                      - NVIDIA-H100-NVL
-                      - NVIDIA-H100-PCIe
       container:
-        image: inseefrlab/onyxia-vscode-pytorch:py3.12.11-gpu
-        imagePullPolicy: IfNotPresent
-        resources:
-          limits:
-            nvidia.com/gpu: 1
-            cpu: 30000m
-            memory: 200Gi
-          requests:
-            cpu: 11000m
-            memory: 100Gi
-        command: ["/bin/bash", "-c"]
         args:
           - |
             git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
@@ -203,17 +185,12 @@ spec:
             fi
             echo "Executing: $CMD"
             eval $CMD
-        volumeMounts:
-          - mountPath: /dev/shm
-            name: dshm
-        env: *common-env
 
     # =========================================================================
-    # Step 2 — encode unambiguous (prod)
+    # Step 2 — encode unambiguous (prod). CPU defaults; env inherited.
     # =========================================================================
     - name: encode-unambiguous
       container:
-        <<: *cpu-container
         args:
           - |
             git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
@@ -229,25 +206,14 @@ spec:
             eval $CMD
 
     # =========================================================================
-    # Step 3 — encode ambiguous (one container per model, fan-out)
+    # Step 3 — encode ambiguous (one container per model, fan-out).
+    #          Defaults; env inherited.
     # =========================================================================
     - name: run-encode
       inputs:
         parameters:
           - name: LLM_NAME
-      affinity: *gpu-affinity
       container:
-        image: inseefrlab/onyxia-vscode-pytorch:py3.12.11-gpu
-        imagePullPolicy: IfNotPresent
-        resources:
-          limits:
-            nvidia.com/gpu: 1
-            cpu: 30000m
-            memory: 200Gi
-          requests:
-            cpu: 11000m
-            memory: 100Gi
-        command: ["/bin/bash", "-c"]
         args:
           - |
             git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
@@ -270,14 +236,11 @@ spec:
 
             echo "Executing: $CMD"
             eval $CMD
-        volumeMounts:
-          - mountPath: /dev/shm
-            name: dshm
-        env: *common-env
 
     # =========================================================================
     # Aggregate — read run IDs written to S3 by each encode task and decide
-    #             whether the ensemble step should run.
+    #             whether the ensemble step should run. Overrides resources
+    #             (small) and env (adds PARAMS/EXPERIMENT/MODE).
     # =========================================================================
     - name: aggregate-run-ids
       inputs:
@@ -294,8 +257,6 @@ spec:
             valueFrom:
               path: /tmp/run_ids.txt
       container:
-        image: inseefrlab/onyxia-vscode-pytorch:py3.12.11-gpu
-        imagePullPolicy: IfNotPresent
         resources:
           limits:
             cpu: 2000m
@@ -303,7 +264,6 @@ spec:
           requests:
             cpu: 500m
             memory: 1Gi
-        command: ["/bin/bash", "-c"]
         args:
           - |
             pip install s3fs -q
@@ -360,14 +320,14 @@ spec:
             value: minio.lab.sspcloud.fr
 
     # =========================================================================
-    # Step 4 — majority-vote ensemble across all model predictions
+    # Step 4 — majority-vote ensemble across all model predictions.
+    #          CPU defaults; env inherited.
     # =========================================================================
     - name: run-ensemble
       inputs:
         parameters:
           - name: RUN_IDS
       container:
-        <<: *cpu-container
         args:
           - |
             git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
@@ -387,11 +347,11 @@ spec:
             eval $CMD
 
     # =========================================================================
-    # Step 5 — build the final NACE 2025 dataset (prod)
+    # Step 5 — build the final NACE 2025 dataset (prod).
+    #          CPU defaults; env inherited.
     # =========================================================================
     - name: build-final
       container:
-        <<: *cpu-container
         args:
           - |
             git clone https://github.com/InseeFrLab/codif-ape-nace-revision.git
