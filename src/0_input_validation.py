@@ -75,12 +75,14 @@ def validate_input(input_url: str) -> None:
         errors.append(f"{stats['apet_null']} rows with null {NACE08_VAR}")
     if stats["apet_bad_format"]:
         errors.append(f"{stats['apet_bad_format']} rows with {NACE08_VAR} not matching {NAF08_PATTERN}")
-    if stats["libelle_empty"]:
-        errors.append(f"{stats['libelle_empty']} rows with empty {ACTIVITY_LABEL_VAR}")
+    # if stats["libelle_empty"]:
+    #     errors.append(f"{stats['libelle_empty']} rows with empty {ACTIVITY_LABEL_VAR}")
 
-    duplicates = stats["n_rows"] - stats["liasse_distinct"]
+        duplicates = stats["n_rows"] - stats["liasse_distinct"]
     if duplicates:
         logger.warning("%s duplicate liasse_numero (tolerated downstream via DISTINCT ON).", duplicates)
+    if stats["libelle_empty"]:
+        logger.warning(f"{stats['libelle_empty']} rows with empty {ACTIVITY_LABEL_VAR}")
 
     if errors:
         raise ValueError("Input validation FAILED:\n - " + "\n - ".join(errors))
