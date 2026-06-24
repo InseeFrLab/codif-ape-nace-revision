@@ -10,43 +10,23 @@ spec:
         medium: Memory
         sizeLimit: 64Gi
   entrypoint: main
+  # Parameter VALUES live in argo-workflows/params.yaml and are supplied at
+  # submit time via `--parameter-file` (see argo-workflows/argo_helper.txt).
+  # Only the declarations (names) are kept here so templates can reference
+  # {{workflow.parameters.X}}; a value not provided at submit fails fast.
   arguments:
     parameters:
-      # "prod" (produce the recoded dataset) or "eval" (compute metrics on annotated rows)
-      - name: mode
-        value: "prod"
-      # "cag" or "rag"
-      - name: strategy
-        value: "cag"
-      # S3 path to the input parquet (prod mode only; leave empty for eval)
-      - name: input-url
-        value: ""
-      - name: experiment-name
-        value: "NACE2025_DATASET"
-      - name: branch
-        value: "prod"
-      # Stable id shared by all models of this run. Re-submitting with the SAME
-      # job-id resumes crashed encode tasks (completed batches are skipped).
-      - name: job-id
-        value: "job-001"
-      - name: batch-size
-        value: "1000"
-      # Qdrant collection used by the RAG strategy (and built by step 1).
-      - name: collection-name
-        value: "embeddings_qwen"
-      # Embedding model for step 1 (empty = script default).
-      - name: embedding-model
-        value: ""
-      # Set to "true" to (re)build the vector DB in step 1 (RAG only).
-      - name: build-vector-db
-        value: "false"
-      # List of models. A single-item list skips voting in eval mode.
-      - name: params-conf-list
-        value: '[
-          {"LLM_NAME": "Qwen/Qwen3-32B"},
-          {"LLM_NAME": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"},
-          {"LLM_NAME": "mistralai/Mistral-Small-3.2-24B-Instruct-2506"}
-          ]'
+      - name: mode              # "prod" (produce dataset) or "eval" (metrics on annotated rows)
+      - name: strategy          # "cag" or "rag"
+      - name: input-url         # S3 path to the input parquet (prod only; empty for eval)
+      - name: experiment-name   # MLflow experiment name
+      - name: branch            # git branch to checkout
+      - name: job-id            # stable id; resubmit with the SAME value to resume a crashed run
+      - name: batch-size        # rows per batch in step 3
+      - name: collection-name   # Qdrant collection (RAG)
+      - name: embedding-model   # embedding model for step 1 (empty = script default)
+      - name: build-vector-db   # "true" to (re)build the vector DB in step 1 (RAG only)
+      - name: params-conf-list  # JSON list of models; single item skips voting in eval
 
   templates:
     # =========================================================================

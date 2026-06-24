@@ -1,0 +1,44 @@
+# Parameter values for relabel.yaml.
+# Supplied at submit time:
+#   argo submit argo-workflows/relabel.yaml --parameter-file argo-workflows/params.yaml
+# Override a single value on the command line with -p, e.g. -p mode=eval
+
+# "prod" (produce the recoded dataset) or "eval" (compute metrics on annotated rows)
+mode: "prod"
+
+# "cag" or "rag"
+strategy: "cag"
+
+# S3 path to the input parquet (prod mode only; leave empty "" for eval)
+input-url: ""
+
+# MLflow experiment name
+experiment-name: "NACE2025_DATASET"
+
+# git branch to checkout in each step
+branch: "prod"
+
+# Stable id shared by all models of this run.
+# Re-submitting with the SAME job-id resumes crashed encode tasks (completed
+# batches are skipped). Change it to start a fresh run.
+job-id: "job-001"
+
+# Rows per batch in step 3 (prompts built, LLM-called and committed together)
+batch-size: "1000"
+
+# Qdrant collection used by the RAG strategy (and built by step 1)
+collection-name: "embeddings_qwen"
+
+# Embedding model for step 1 (empty = script default)
+embedding-model: ""
+
+# Set to "true" to (re)build the vector DB in step 1 (RAG only)
+build-vector-db: "false"
+
+# JSON list of models. A single-item list skips voting in eval mode
+# (in prod the ensemble step always runs to write the final file).
+params-conf-list: |
+  [
+    {"LLM_NAME": "qwen3-6-35b-moe"},
+    #{"LLM_NAME": "gemma4-26b-moe"}
+  ]

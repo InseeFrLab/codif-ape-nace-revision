@@ -1,0 +1,139 @@
+===============================================================================
+ Lancer le pipeline de recodification avec la CLI Argo
+===============================================================================
+
+Fichiers :
+  - relabel.yaml   : le workflow (étapes 0→5). Ne pas éditer pour un run normal.
+  - params.yaml    : les valeurs des paramètres. C'est CE fichier qu'on édite.
+
+-------------------------------------------------------------------------------
+0. Prérequis (une seule fois)
+-------------------------------------------------------------------------------
+
+Installing the Argo CLI (if argo version fails)
+
+# Linux x86_64 — install into ~/.local/bin (no root required)
+ARGO_VERSION=v3.6.5
+curl -sLO "https://github.com/argoproj/argo-workflows/releases/download/${ARGO_VERSION}/argo-linux-amd64.gz"
+gunzip argo-linux-amd64.gz
+chmod +x argo-linux-amd64
+mkdir -p ~/.local/bin
+mv argo-linux-amd64 ~/.local/bin/argo
+
+# Make sure ~/.local/bin is on your PATH (usually already the case on SSPCloud)
+export PATH="$HOME/.local/bin:$PATH"
+
+argo version    # verify
+
+
+- La CLI `argo` est installée (sur le datalab SSP Cloud elle est déjà présente).
+  Vérifier :        argo version
+- Namespace : sur SSP Cloud, ton service tourne DANS le cluster, donc argo/kubectl
+  utilisent automatiquement le compte de service du pod et ton namespace par
+  défaut. Tu n'as normalement PAS besoin de configurer un contexte.
+  Vérifie simplement que argo répond :
+      argo list -n <ns>           # ex. -n projet-ape
+
+  Si "error: no current context is set" apparaît avec une commande kubectl :
+  c'est normal en auth in-cluster (le kubeconfig n'a pas de contexte). Ne lance
+  PAS `kubectl config set-context` ; passe juste -n <ns> à argo. Pour vérifier :
+      kubectl config get-contexts          # vide => auth in-cluster, rien à faire
+      # s'il y a un contexte non courant : kubectl config use-context <nom>
+
+- Les secrets référencés par le workflow doivent exister dans le namespace
+  (my-s3-creds, hf-token, qdrant-apikey, langfuse-secrets).
+
+Dans les commandes ci-dessous, remplace <ns> par ton namespace
+(ou enlève -n <ns> si ton namespace par défaut est déjà le bon).
+
+-------------------------------------------------------------------------------
+1. Vérifier le workflow avant de lancer
+-------------------------------------------------------------------------------
+    argo lint --offline argo-workflows/relabel.yaml
+
+-------------------------------------------------------------------------------
+2. Lancer un run
+-------------------------------------------------------------------------------
+Éditer d'abord argo-workflows/params.yaml (mode, input-url, job-id, modèles…),
+puis :
+
+    argo submit argo-workflows/relabel.yaml \
+        --parameter-file argo-workflows/params.yaml \
+        -n <ns> --watch
+
+  --watch  affiche l'arbre des étapes en direct (Ctrl-C n'arrête PAS le run).
+
+Surcharger une valeur sans toucher params.yaml (le -p est prioritaire) :
+
+    argo submit argo-workflows/relabel.yaml \
+        --parameter-file argo-workflows/params.yaml \
+        -p mode=eval -p job-id=eval-run-01 \
+        -n <ns> --watch
+
+-------------------------------------------------------------------------------
+3. Suivre l'exécution
+-------------------------------------------------------------------------------
+    argo list -n <ns>                  # tous les workflows
+    argo get @latest -n <ns>           # arbre + statut du dernier run
+    argo logs @latest -f -n <ns>       # logs en continu (toutes les étapes)
+    argo logs @latest -n <ns> | grep -E "INPUT|OUTPUT"   # voir les chemins I/O
+
+  (@latest = le dernier workflow soumis ; on peut aussi mettre son nom exact,
+   ex. run-relabel-xxxxx, donné par `argo list`.)
+
+-------------------------------------------------------------------------------
+4. Reprendre un run qui a planté
+-------------------------------------------------------------------------------
+Le pipeline est reprenable au niveau des batchs de l'étape 3 : il suffit de
+RELANCER avec le MÊME job-id. Les batchs déjà écrits sur S3 sont sautés.
+
+    argo submit argo-workflows/relabel.yaml \
+        --parameter-file argo-workflows/params.yaml \
+        -n <ns> --watch
+    # (params.yaml contient le même job-id qu'au run précédent)
+
+⚠️ Pour repartir de zéro, changer job-id dans params.yaml.
+
+-------------------------------------------------------------------------------
+5. Arrêter / nettoyer
+-------------------------------------------------------------------------------
+    argo stop @latest -n <ns>          # arrêt propre (exécute les hooks de sortie)
+    argo terminate @latest -n <ns>     # arrêt immédiat
+    argo delete @latest -n <ns>        # supprimer le workflow
+    argo delete --completed -n <ns>    # supprimer tous les workflows terminés
+
+-------------------------------------------------------------------------------
+6. Scénarios fréquents (valeurs à mettre dans params.yaml)
+-------------------------------------------------------------------------------
+ÉVALUATION (métriques sur les lignes annotées, plusieurs modèles, vote) :
+    mode: "eval"
+    input-url: ""                      # eval lit l'extraction filtrée aux annotées
+    params-conf-list: liste de 2+ modèles
+
+PRODUCTION mono-modèle (recode un nouveau fichier, sans vote) :
+    mode: "prod"
+    input-url: "s3://projet-ape/.../mon_fichier.parquet"
+    params-conf-list: un seul modèle
+    # en prod l'étape ensemble tourne quand même pour écrire le fichier final
+
+PRODUCTION multi-modèles (recode + vote majoritaire) :
+    mode: "prod"
+    input-url: "s3://projet-ape/.../mon_fichier.parquet"
+    params-conf-list: liste de 2+ modèles
+
+RAG avec (re)construction de la base vectorielle :
+    strategy: "rag"
+    build-vector-db: "true"
+    collection-name: "embeddings_qwen"
+
+-------------------------------------------------------------------------------
+7. Rappel du DAG
+-------------------------------------------------------------------------------
+  0 validate ──┬─> 1 build-vector-db (rag, opt-in) ─┐
+               ├─> 2 encode-unambiguous (prod) ──────┼─> 5 build-final (prod)
+               └─> 3 encode (1 par modèle) ─> aggregate ─> 4 ensemble ─┘
+
+  - validate        : toujours
+  - build-vector-db : si strategy=rag ET build-vector-db=true
+  - encode-unambiguous / build-final : prod uniquement
+  - ensemble        : si plusieurs modèles, ou toujours en prod
