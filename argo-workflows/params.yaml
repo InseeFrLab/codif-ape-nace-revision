@@ -18,10 +18,14 @@ experiment-name: "NACE2025_DATASET"
 # git branch to checkout in each step
 branch: "prod"
 
-# Stable id shared by all models of this run.
-# Re-submitting with the SAME job-id resumes crashed encode tasks (completed
-# batches are skipped). Change it to start a fresh run.
-job-id: "job-001"
+# Stable id shared by all steps/models of this run, scoping every output under
+# workflow_relabel/<job-id>/.
+#   ""            => auto-generated (auto-<timestamp>) for a fresh run.
+#   "some-value"  => RESUME: re-submit with the id of a crashed run to pick up
+#                    where it stopped (completed step-3 batches are skipped).
+# The resolved id is printed by the `resolve-job-id` step and appears in every
+# step's OUTPUT path.
+job-id: ""
 
 # Rows per batch in step 3 (prompts built, LLM-called and committed together)
 batch-size: "1000"

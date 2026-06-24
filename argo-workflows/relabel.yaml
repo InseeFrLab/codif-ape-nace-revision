@@ -16,7 +16,7 @@ spec:
       - name: input-url         # S3 path to the input parquet (prod only; empty for eval)
       - name: experiment-name   # MLflow experiment name
       - name: branch            # git branch to checkout
-      - name: job-id            # stable id; resubmit with the SAME value to resume a crashed run
+      - name: job-id            # "" => auto-<timestamp>; set a value to resume a crashed run
       - name: batch-size        # rows per batch in step 3
       - name: sample-size       # step 3: sample N rows for a quick test ("" = full run)
       - name: collection-name   # Qdrant collection (RAG)
@@ -99,6 +99,16 @@ spec:
     - name: main
       dag:
         tasks:
+          # Resolve the effective job-id ONCE (empty param => auto-<timestamp>),
+          # then every step consumes this single value so all outputs land under
+          # the same workflow_relabel/<job-id>/ directory.
+          - name: resolve-job-id
+            template: resolve-job-id
+            arguments:
+              parameters:
+                - name: job-id
+                  value: "{{workflow.parameters.job-id}}"
+
           - name: validate
             template: validate
 
@@ -109,43 +119,85 @@ spec:
 
           - name: encode-unambiguous
             template: encode-unambiguous
-            dependencies: [validate]
+            dependencies: [validate, resolve-job-id]
             when: "'{{workflow.parameters.mode}}' == 'prod'"
+            arguments:
+              parameters:
+                - name: job-id
+                  value: "{{tasks.resolve-job-id.outputs.parameters.job-id}}"
 
           - name: encode
             template: run-encode
-            dependencies: [validate, build-vector-db]
+            dependencies: [validate, build-vector-db, resolve-job-id]
             arguments:
               parameters:
                 - name: LLM_NAME
                   value: "{{item.LLM_NAME}}"
+                - name: job-id
+                  value: "{{tasks.resolve-job-id.outputs.parameters.job-id}}"
             withParam: "{{workflow.parameters.params-conf-list}}"
 
           - name: aggregate
             template: aggregate-run-ids
-            dependencies: [encode]
+            dependencies: [encode, resolve-job-id]
             arguments:
               parameters:
                 - name: params-conf-list
                   value: "{{workflow.parameters.params-conf-list}}"
                 - name: job-id
-                  value: "{{workflow.parameters.job-id}}"
+                  value: "{{tasks.resolve-job-id.outputs.parameters.job-id}}"
                 - name: mode
                   value: "{{workflow.parameters.mode}}"
 
           - name: ensemble
             template: run-ensemble
-            dependencies: [aggregate]
+            dependencies: [aggregate, resolve-job-id]
             when: "'{{tasks.aggregate.outputs.parameters.should-ensemble}}' == 'true'"
             arguments:
               parameters:
                 - name: RUN_IDS
                   value: "{{tasks.aggregate.outputs.parameters.run-ids}}"
+                - name: job-id
+                  value: "{{tasks.resolve-job-id.outputs.parameters.job-id}}"
 
           - name: build-final
             template: build-final
-            dependencies: [encode-unambiguous, ensemble]
+            dependencies: [encode-unambiguous, ensemble, resolve-job-id]
             when: "'{{workflow.parameters.mode}}' == 'prod'"
+            arguments:
+              parameters:
+                - name: job-id
+                  value: "{{tasks.resolve-job-id.outputs.parameters.job-id}}"
+
+    # =========================================================================
+    # Resolve job-id — empty param => auto-<timestamp>; otherwise pass through.
+    # Computed once here so all steps share the same id (and thus output dir).
+    # =========================================================================
+    - name: resolve-job-id
+      inputs:
+        parameters:
+          - name: job-id
+      outputs:
+        parameters:
+          - name: job-id
+            valueFrom:
+              path: /tmp/job_id.txt
+      container:
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        args:
+          - |
+            JOB_ID="{{inputs.parameters.job-id}}"
+            if [ -z "$JOB_ID" ]; then
+              JOB_ID="auto-$(date +%Y%m%d-%H%M%S)"
+            fi
+            printf '%s' "$JOB_ID" > /tmp/job_id.txt
+            echo "Resolved job-id: $JOB_ID"
 
     # =========================================================================
     # Step 0 — input validation (gate). CPU defaults; env inherited.
@@ -189,6 +241,9 @@ spec:
     # Step 2 — encode unambiguous (prod). CPU defaults; env inherited.
     # =========================================================================
     - name: encode-unambiguous
+      inputs:
+        parameters:
+          - name: job-id
       container:
         args:
           - |
@@ -197,7 +252,7 @@ spec:
             git checkout {{workflow.parameters.branch}}
             uv sync
 
-            CMD="uv run src/2_encode_unambiguous.py --job_id {{workflow.parameters.job-id}}"
+            CMD="uv run src/2_encode_unambiguous.py --job_id {{inputs.parameters.job-id}}"
             if [ "{{workflow.parameters.input-url}}" != "" ]; then
               CMD="$CMD --input_url {{workflow.parameters.input-url}}"
             fi
@@ -212,6 +267,7 @@ spec:
       inputs:
         parameters:
           - name: LLM_NAME
+          - name: job-id
       container:
         args:
           - |
@@ -226,7 +282,7 @@ spec:
               --experiment_name {{workflow.parameters.experiment-name}} \
               --llm_name {{inputs.parameters.LLM_NAME}} \
               --collection_name {{workflow.parameters.collection-name}} \
-              --job_id {{workflow.parameters.job-id}} \
+              --job_id {{inputs.parameters.job-id}} \
               --batch_size {{workflow.parameters.batch-size}}"
 
             if [ "{{workflow.parameters.input-url}}" != "" ]; then
@@ -329,6 +385,7 @@ spec:
       inputs:
         parameters:
           - name: RUN_IDS
+          - name: job-id
       container:
         args:
           - |
@@ -340,7 +397,7 @@ spec:
             CMD="uv run src/4_ensemble_predictions.py \
               --run_ids {{inputs.parameters.RUN_IDS}} \
               --mode {{workflow.parameters.mode}} \
-              --job_id {{workflow.parameters.job-id}}"
+              --job_id {{inputs.parameters.job-id}}"
 
             if [ "{{workflow.parameters.mode}}" = "prod" ]; then
               CMD="$CMD --export"
@@ -354,6 +411,9 @@ spec:
     #          CPU defaults; env inherited.
     # =========================================================================
     - name: build-final
+      inputs:
+        parameters:
+          - name: job-id
       container:
         args:
           - |
@@ -362,7 +422,7 @@ spec:
             git checkout {{workflow.parameters.branch}}
             uv sync
 
-            CMD="uv run src/5_build_nace2025_sirene4.py --job_id {{workflow.parameters.job-id}}"
+            CMD="uv run src/5_build_nace2025_sirene4.py --job_id {{inputs.parameters.job-id}}"
             if [ "{{workflow.parameters.input-url}}" != "" ]; then
               CMD="$CMD --input_url {{workflow.parameters.input-url}}"
             fi
