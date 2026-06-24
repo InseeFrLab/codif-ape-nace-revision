@@ -7,7 +7,7 @@ def setup_logging(log_file="encode_ambiguous.log"):
     Configure logging pour logger à la fois dans un fichier et dans la console.
     """
     logger = logging.getLogger()  # Logger racine
-    logger.setLevel(logging.DEBUG)  #logging.WARNING
+    logger.setLevel(logging.INFO)  #logging.WARNING
 
     # --- Handler pour le fichier ---
     file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
