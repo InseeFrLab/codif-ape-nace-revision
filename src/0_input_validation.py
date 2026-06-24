@@ -78,7 +78,7 @@ def validate_input(input_url: str) -> None:
     # if stats["libelle_empty"]:
     #     errors.append(f"{stats['libelle_empty']} rows with empty {ACTIVITY_LABEL_VAR}")
 
-        duplicates = stats["n_rows"] - stats["liasse_distinct"]
+    duplicates = stats["n_rows"] - stats["liasse_distinct"]
     if duplicates:
         logger.warning("%s duplicate liasse_numero (tolerated downstream via DISTINCT ON).", duplicates)
     if stats["libelle_empty"]:
