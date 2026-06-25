@@ -1,6 +1,8 @@
 # CAG vs RAG: NACE 2008 → NACE 2025 recodification
 
-LLM-based recoding of business activity descriptions from NACE 2008 to NACE 2025, comparing a **Retrieval-Augmented Generation (RAG)** strategy against a **Context-Augmented Generation (CAG)** strategy.
+Recode labelled French business records into **NACE 2025** (NAF rev3) using LLMs. Each record carries a free-text **activity description** and a **NACE 2008** (NAF rev2) code whose mapping to NACE 2025 is **not always bijective**: when one 2008 code maps to several 2025 candidates, the LLM disambiguates from the activity description; the univocal cases are resolved by rule.
+
+Two generation strategies are compared: **Retrieval-Augmented Generation (RAG)** (top-k NACE notices retrieved from Qdrant) vs **Context-Augmented Generation (CAG)** (short list of NACE 2025 candidates added in the prompt, based on NAF 2008 pre-existing labels).
 
 ## Repository structure
 
@@ -23,41 +25,25 @@ LLM-based recoding of business activity descriptions from NACE 2008 to NACE 2025
 └── .env.example
 ```
 
-## Setup
 
-Requires Python 3.12+ and [`uv`](https://docs.astral.sh/uv/).
+## Argo workflow
 
-```bash
-uv sync
-cp .env.example .env   # then fill in the secrets
-uv run pre-commit install
-```
+The pipeline runs as a single Argo workflow (`argo-workflows/relabel.yaml`) in the **`projet-ape`** namespace. The DAG chains steps 0→5:
 
-## Running `3_encode_ambiguous.py`
+- **0 validate** — check required columns and value formats of the input file.
+- **1 build-vector-db** — build the Qdrant collection (RAG only, opt-in).
+- **2 encode-unambiguous** — rule-based recoding of univocal NACE 2008 → 2025 codes.
+- **3 encode** — LLM recoding of ambiguous cases, one branch per model, batched and **resumable**.
+- **4 ensemble** — majority-vote consolidation across model runs.
+- **5 build-final** — assemble the final NACE 2025 dataset.
 
-**RAG** (retrieves top-k NACE notices from a Qdrant collection before generation):
+It runs in two modes: **prod** (recode an arbitrary input file) or **eval** (compute accuracy metrics on human-annotated rows).
 
-```bash
-uv run src/3_encode_ambiguous.py \
-  --strategy rag \
-  --llm_name qwen3-6-35b-moe \
-  --collection_name embeddings_qwen \
-  --experiment_name NACE2025_DATASET \
-  --top_k 5 \
-  --third 1
-```
+Only `argo-workflows/params.yaml` is edited per run. A run is scoped by a single `job-id`, which roots every output under `s3://projet-ape/NAF-revision/workflow_relabel/<job-id>/`. Re-submitting with the same `job-id` resumes a crashed run (completed step-3 batches are skipped). See `argo-workflows/argo_helper.md` for the submit/monitor/resume procedure.
 
-**CAG** (the full NACE notice catalog is passed in the prompt, no retrieval):
+## Work in progress
 
-```bash
-uv run src/3_encode_ambiguous.py \
-  --strategy cag \
-  --llm_name qwen3-6-35b-moe \
-  --experiment_name NACE2025_DATASET \
-  --third 1
-```
-
-Common flags: `--sample_size N` for a subset, `--thinking` to enable LLM reasoning mode, `--only_annotated true` to restrict to annotated cases. See `python src/3_encode_ambiguous.py --help` for the full list.
+This workflow is **not finalized**: it still carries a fair amount of methodological exploration (RAG vs CAG, multi-model voting, eval tooling). Results so far point toward a production pipeline that is **CAG-only** and relies on a **single LLM** rather than a majority vote across several models. As a consequence, the code is more complex than the target pipeline will need — once the methodology is locked in, the RAG strategy, the ensemble/voting step, and the remaining exploratory branches can be pruned to leave a leaner CAG-only, single-model pipeline.
 
 ## License
 
