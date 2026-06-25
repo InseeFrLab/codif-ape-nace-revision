@@ -16,7 +16,7 @@ input-url: "s3://projet-ape/data/24062026/naf2025/raw_auto.parquet"
 experiment-name: "NACE2025_DATASET"
 
 # git branch to checkout in each step
-branch: "prod"
+branch: "main"
 
 # Stable id shared by all steps/models of this run, scoping every output under
 # workflow_relabel/<job-id>/.
@@ -33,7 +33,7 @@ batch-size: "1000"
 
 # Step 3 only: sample N rows for a quick test run. "" = full dataset.
 # Sampling is seeded, so a sampled run is still resumable with the same job-id.
-sample-size: "50"
+sample-size: ""
 
 # Qdrant collection used by the RAG strategy (and built by step 1)
 collection-name: "embeddings_qwen"
