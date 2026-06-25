@@ -38,6 +38,12 @@ class CAGResponse(BaseModel):
         default=0.0,
     )
 
+    furnished_rental: bool = Field(
+        description="""True if the (first) described activity is the rental of furnished accommodation
+        (location de logement meublé), False otherwise.""",
+        default=False,
+    )
+
 
 class CAGStrategy(EncodeStrategy):
     def __init__(

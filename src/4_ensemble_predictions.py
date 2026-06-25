@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-VAR_TO_KEEP = ["liasse_numero", "nace2025", "codable"]
+VAR_TO_KEEP = ["liasse_numero", "nace2025", "codable", "furnished_rental"]
 LEVELS = [5, 4, 3, 2, 1]
 ENSEMBLE_METHODS = ["voting_label"]
 
@@ -97,9 +97,16 @@ def load_predictions(models: Dict[str, Dict], fs) -> Dict[str, pd.DataFrame]:
 def apply_ensemble_strategies(
     merged_df: pd.DataFrame, models: Dict[str, Dict]
 ) -> Tuple[pd.DataFrame, List[str]]:
-    """Add the majority-voting column to `merged_df`."""
+    """Add the majority-voting label column and the aggregated furnished_rental
+    flag to `merged_df`."""
     model_columns = [f"nace2025_{name}" for name in models]
     merged_df["nace2025_voting_label"] = select_labels_voting(merged_df, model_columns)
+
+    # furnished_rental: majority vote across models (tie => True). Single-model
+    # runs reduce to that model's value.
+    furnished_columns = [f"furnished_rental_{name}" for name in models]
+    merged_df["furnished_rental"] = merged_df[furnished_columns].mean(axis=1) >= 0.5
+
     return merged_df, model_columns
 
 
@@ -156,7 +163,7 @@ def compute_all_accuracies(
 
 def export_final_predictions(merged_df: pd.DataFrame, fs, job_id: str) -> str:
     """Write the majority-voting predictions to the run's ensemble dir, return the path."""
-    final_df = merged_df[["liasse_numero", "nace2025_voting_label"]].rename(
+    final_df = merged_df[["liasse_numero", "nace2025_voting_label", "furnished_rental"]].rename(
         columns={"nace2025_voting_label": "nace2025"}
     )
     output_path = URL_WORKFLOW_ENSEMBLE.format(job_id=job_id)
@@ -205,7 +212,11 @@ def main(run_ids: List[str], mode: str = "eval", export: bool = False, job_id: s
         dfs,
         merge_on="liasse_numero",
         var_to_keep=VAR_TO_KEEP,
-        columns_to_rename={"nace2025": "nace2025_{key}", "codable": "codable_{key}"},
+        columns_to_rename={
+            "nace2025": "nace2025_{key}",
+            "codable": "codable_{key}",
+            "furnished_rental": "furnished_rental_{key}",
+        },
     )
     merged_df, model_columns = apply_ensemble_strategies(merged_df, models)
 

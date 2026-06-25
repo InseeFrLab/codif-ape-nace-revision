@@ -106,6 +106,13 @@ def build_nace2025_sirene4(input_url: str, job_id: str, output_url: str = None):
 
     assert data_sirene4_nace2025.duplicated(subset="liasse_numero").sum() == 0
 
+    # furnished_rental is an LLM-only judgment (step 3/4). Univocal (rule-based)
+    # and ground-truth rows are not assessed → default to False.
+    if "furnished_rental" in data_sirene4_nace2025.columns:
+        data_sirene4_nace2025["furnished_rental"] = (
+            data_sirene4_nace2025["furnished_rental"].fillna(False).astype(bool)
+        )
+
     data_sirene4_nace2025.to_parquet(output_url, filesystem=fs)
     logger.info("✅ Final dataset (%d rows) written to %s", len(data_sirene4_nace2025), output_url)
 
