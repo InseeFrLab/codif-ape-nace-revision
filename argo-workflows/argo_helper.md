@@ -62,22 +62,21 @@ argo logs @latest -n <ns> | grep -E "INPUT|OUTPUT" # chemins I/O
 
 ## 4. Reprendre un run qui a planté
 
-Par défaut `job-id: ""` dans `params.yaml` → l'étape `resolve-job-id` génère un id `auto-<timestamp>` (un nouveau run à chaque soumission).
+Par défaut `job-id: ""` dans `params.yaml` → le job-id prend **le nom du run Argo** (ex. `run-relabel-x7k2p`). Run Argo, job-id, dossier S3 (`workflow_relabel/<job-id>/`) et runs MLflow (`<job-id>--<modèle>`) portent donc le même id.
 
-Pour **reprendre** un run planté : récupérer son id, puis le mettre dans `job-id`. Les batchs de l'étape 3 déjà écrits sur S3 sont sautés.
+Pour **reprendre** un run planté : récupérer son id (= le nom du run Argo), puis le mettre dans `job-id`. Les batchs de l'étape 3 déjà écrits sur S3 sont sautés.
 
 ```bash
-# 1. Retrouver le job-id du run planté (logs de l'étape resolve-job-id) :
-argo logs <run-name> -n <ns> | grep "Resolved job-id"
-#    (ou le lire dans un chemin OUTPUT : .../workflow_relabel/<job-id>/...)
+# 1. Retrouver le job-id du run planté : c'est son nom Argo.
+argo list -n <ns>                                  # ex. run-relabel-x7k2p
+#   (sinon : argo logs <run-name> -n <ns> | grep "Resolved job-id")
 
-# 2. Fixer ce job-id dans params.yaml (job-id: "auto-20260624-…") ou via -p,
-#    puis relancer :
+# 2. Fixer ce job-id puis relancer :
 argo submit relabel.yaml --parameter-file params.yaml \
-    -p job-id=auto-20260624-101530 -n <ns> --watch
+    -p job-id=run-relabel-x7k2p -n <ns> --watch
 ```
 
-Laisser `job-id: ""` repart toujours de zéro (nouvel id).
+Laisser `job-id: ""` repart toujours de zéro (le nouveau run Argo donne un nouvel id).
 
 ## 5. Arrêter / nettoyer
 

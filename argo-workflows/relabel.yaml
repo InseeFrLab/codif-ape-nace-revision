@@ -1,7 +1,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  name: run-relabel
+  # generateName (not a fixed name) so every submission gets a unique run, e.g.
+  # run-relabel-x7k2p. That name doubles as the default job-id (see
+  # resolve-job-id), harmonising: Argo run name == job-id == S3 output dir ==
+  # MLflow run_name prefix.
+  generateName: run-relabel-
 spec:
   serviceAccountName: workflow
   entrypoint: main
@@ -16,7 +20,7 @@ spec:
       - name: input-url         # S3 path to the input parquet (prod only; empty for eval)
       - name: experiment-name   # MLflow experiment name
       - name: branch            # git branch to checkout
-      - name: job-id            # "" => auto-<timestamp>; set a value to resume a crashed run
+      - name: job-id            # "" => defaults to the Argo run name; set a value to resume a crashed run
       - name: batch-size        # rows per batch in step 3
       - name: sample-size       # step 3: sample N rows for a quick test ("" = full run)
       - name: collection-name   # Qdrant collection (RAG)
@@ -126,7 +130,7 @@ spec:
                 - name: job-id
                   value: "{{tasks.resolve-job-id.outputs.parameters.job-id}}"
 
-          - name: encode
+          - name: encode-ambiguous
             template: run-encode
             dependencies: [validate, build-vector-db, resolve-job-id]
             arguments:
@@ -139,7 +143,7 @@ spec:
 
           - name: aggregate
             template: aggregate-run-ids
-            dependencies: [encode, resolve-job-id]
+            dependencies: [encode-ambiguous, resolve-job-id]
             arguments:
               parameters:
                 - name: params-conf-list
@@ -170,8 +174,9 @@ spec:
                   value: "{{tasks.resolve-job-id.outputs.parameters.job-id}}"
 
     # =========================================================================
-    # Resolve job-id — empty param => auto-<timestamp>; otherwise pass through.
-    # Computed once here so all steps share the same id (and thus output dir).
+    # Resolve job-id — empty param => the Argo run name ({{workflow.name}});
+    # otherwise pass the provided value through (resume). Computed once here so
+    # all steps share the same id (and thus the same output dir / MLflow names).
     # =========================================================================
     - name: resolve-job-id
       inputs:
@@ -194,7 +199,7 @@ spec:
           - |
             JOB_ID="{{inputs.parameters.job-id}}"
             if [ -z "$JOB_ID" ]; then
-              JOB_ID="auto-$(date +%Y%m%d-%H%M%S)"
+              JOB_ID="{{workflow.name}}"
             fi
             printf '%s' "$JOB_ID" > /tmp/job_id.txt
             echo "Resolved job-id: $JOB_ID"

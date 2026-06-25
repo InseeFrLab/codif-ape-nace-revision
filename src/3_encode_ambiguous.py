@@ -319,6 +319,12 @@ if __name__ == "__main__":
         args.job_id = datetime.now().strftime("run-%Y%m%d-%H%M%S")
         logging.info("No --job_id provided — fresh run (no resume). job_id=%s", args.job_id)
 
+    # Harmonise identifiers: the MLflow run name is derived from the job_id (one
+    # run per model) so Argo run / job_id / S3 paths / MLflow all share one id.
+    if args.run_name is None:
+        suffix = "-thinking" if args.thinking else ""
+        args.run_name = f"{args.job_id}--{args.llm_name}{suffix}"
+
     if args.strategy == "cag":
         args.prompt_name = "cag-classifier"
         args.top_k = None

@@ -20,7 +20,8 @@ branch: "prod"
 
 # Stable id shared by all steps/models of this run, scoping every output under
 # workflow_relabel/<job-id>/.
-#   ""            => auto-generated (auto-<timestamp>) for a fresh run.
+#   ""            => defaults to the Argo run name (e.g. run-relabel-x7k2p) for
+#                    a fresh run, so run / job-id / S3 dir / MLflow all match.
 #   "some-value"  => RESUME: re-submit with the id of a crashed run to pick up
 #                    where it stopped (completed step-3 batches are skipped).
 # The resolved id is printed by the `resolve-job-id` step and appears in every
