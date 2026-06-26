@@ -79,13 +79,21 @@ def fetch_models_from_mlflow(run_ids: List[str]) -> Dict[str, Dict]:
 
 
 def load_predictions(models: Dict[str, Dict], fs) -> Dict[str, pd.DataFrame]:
-    """Load each model's parquet and keep only the `liasse_numero` shared by all."""
-    dfs = {
-        name: pq.ParquetDataset(cfg["path"].replace("s3://", ""), filesystem=fs)
-        .read()
-        .to_pandas()
-        for name, cfg in models.items()
-    }
+    """Load each model's parquet and keep only the `liasse_numero` shared by all.
+
+    Step 3 writes one `part-*.parquet` per batch with an independently-inferred
+    schema, so a column that is all-null in some batch is typed `null` there and
+    `string` elsewhere. `ParquetDataset.read()` cannot unify those across parts
+    (ArrowNotImplementedError: cast string -> null). Reading each part with
+    pandas and concatenating coerces all-null columns to object, sidestepping it
+    (same approach as utils.batch.read_all_results)."""
+    dfs = {}
+    for name, cfg in models.items():
+        directory = cfg["path"].replace("s3://", "")
+        parts = sorted(f for f in fs.ls(directory) if f.endswith(".parquet"))
+        dfs[name] = pd.concat(
+            (pd.read_parquet(f, filesystem=fs) for f in parts), ignore_index=True
+        )
     shared_ids = set.intersection(*(set(df["liasse_numero"]) for df in dfs.values()))
     return {
         name: df.loc[df["liasse_numero"].isin(shared_ids)]
