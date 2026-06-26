@@ -57,6 +57,10 @@ class EncodeStrategy(ABC):
         self.response_format: Optional[BaseModel] = None
         self.sampling_params: Dict[str, Any] = {}
         self.token_stats: Dict[str, float] = {}
+        # When True, `confidence` is recomputed from token log-probabilities
+        # (`_compute_confidence`); when False (default), the model's self-assessed
+        # `confidence` from the structured response is kept as-is.
+        self.use_logprobs_confidence: bool = False
 
     @abstractmethod
     def get_prompts(self, data: pd.DataFrame, load_prompts_from_file: bool = False) -> List[List[Dict]]:
@@ -170,26 +174,35 @@ class EncodeStrategy(ABC):
         # call_llm invocations (e.g. one per batch) — see utils.batch.merge_token_stats.
         stats = {
             "completion_tokens_mean": sum(completion) / len(completion),
-            "completion_tokens_max":  max(completion),
-            "completion_tokens_min":  min(completion),
-            "completion_tokens_sum":  sum(completion),
-            "prompt_tokens_mean":     sum(prompt) / len(prompt),
-            "prompt_tokens_max":      max(prompt),
-            "prompt_tokens_min":      min(prompt),
-            "prompt_tokens_sum":      sum(prompt),
-            "n_calls":                len(usages),
+            "completion_tokens_max": max(completion),
+            "completion_tokens_min": min(completion),
+            "completion_tokens_sum": sum(completion),
+            "prompt_tokens_mean": sum(prompt) / len(prompt),
+            "prompt_tokens_max": max(prompt),
+            "prompt_tokens_min": min(prompt),
+            "prompt_tokens_sum": sum(prompt),
+            "n_calls": len(usages),
         }
         logger.info(
             "Token usage over %d successful calls — "
             "completion: mean=%.1f, max=%d, min=%d | prompt: mean=%.1f, max=%d, min=%d",
             len(usages),
-            stats["completion_tokens_mean"], stats["completion_tokens_max"], stats["completion_tokens_min"],
-            stats["prompt_tokens_mean"],     stats["prompt_tokens_max"],     stats["prompt_tokens_min"],
+            stats["completion_tokens_mean"],
+            stats["completion_tokens_max"],
+            stats["completion_tokens_min"],
+            stats["prompt_tokens_mean"],
+            stats["prompt_tokens_max"],
+            stats["prompt_tokens_min"],
         )
         return stats
 
     def _process_output(self, response: Union[ParsedChatCompletion, BaseException, None]) -> BaseModel:
-        """Extract the parsed BaseModel from a ParsedChatCompletion and attach a confidence."""
+        """Extract the parsed BaseModel from a ParsedChatCompletion.
+
+        By default `confidence` is the model's self-assessed score, returned
+        directly in the structured response (see the prompt's confidence rubric).
+        Set `use_logprobs_confidence=True` to recompute it from token
+        log-probabilities via `_compute_confidence` instead."""
         if response is None or isinstance(response, BaseException):
             return self.response_format(codable=False, nace2025=None, confidence=0.0)
 
@@ -202,9 +215,12 @@ class EncodeStrategy(ABC):
             parsed.confidence = 0.0
             return parsed
 
-        logprobs_obj = response.choices[0].logprobs
-        token_logprobs = getattr(logprobs_obj, "content", None) if logprobs_obj else None
-        parsed.confidence = self._compute_confidence(token_logprobs, parsed.nace2025) if token_logprobs else 0.0
+        if self.use_logprobs_confidence:
+            logprobs_obj = response.choices[0].logprobs
+            token_logprobs = getattr(logprobs_obj, "content", None) if logprobs_obj else None
+            parsed.confidence = self._compute_confidence(token_logprobs, parsed.nace2025) if token_logprobs else 0.0
+        # else: keep the model's self-assessed `parsed.confidence` as-is.
+
         return parsed
 
     @staticmethod

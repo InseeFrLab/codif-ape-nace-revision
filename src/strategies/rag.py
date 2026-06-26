@@ -30,7 +30,7 @@ class RAGResponse(BaseModel):
     )
 
     confidence: Optional[float] = Field(
-        description="""Confidence score for the NACE2025 code, based on log probabilities. Rounded to 2 decimal places maximum.""",
+        description="""Self-assessed confidence score for the NACE2025 code (see the rubric in the system prompt). Between 0 and 1, rounded to 2 decimal places maximum.""",
         default=0.0,
     )
 
@@ -129,7 +129,6 @@ class RAGStrategy(EncodeStrategy):
             ),
             filesystem=fs,
         )
-
 
     def _prepare_queries(self, data: pd.DataFrame):
         """

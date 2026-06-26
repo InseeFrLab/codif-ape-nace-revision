@@ -34,7 +34,7 @@ class CAGResponse(BaseModel):
     )
 
     confidence: Optional[float] = Field(
-        description="""Confidence score for the NACE2025 code, based on log probabilities. Rounded to 2 decimal places maximum.""",
+        description="""Self-assessed confidence score for the NACE2025 code (see the rubric in the system prompt). Between 0 and 1, rounded to 2 decimal places maximum.""",
         default=0.0,
     )
 
@@ -71,8 +71,11 @@ class CAGStrategy(EncodeStrategy):
         self.prompt_label = prompt_label
 
     async def get_prompts(
-        self, data: pd.DataFrame, load_prompts_from_file: bool = False,
-        top_k: int = 5, save: bool = False,
+        self,
+        data: pd.DataFrame,
+        load_prompts_from_file: bool = False,
+        top_k: int = 5,
+        save: bool = False,
     ) -> List[List[Dict]]:
         tasks = [self.create_prompt(row) for row in data.to_dict(orient="records")]
         prompts = await tqdm.gather(*tasks)
@@ -118,7 +121,6 @@ class CAGStrategy(EncodeStrategy):
             URL_PROMPTS_CAG.format(prompt_name=self.prompt_name, prompt_label=self.prompt_label),
             filesystem=fs,
         )
-
 
     def _format_documents(self, nace08: str) -> Tuple[str, str, str]:
         """Format documents related to NACE classification codes.
