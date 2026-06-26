@@ -19,7 +19,7 @@ ACTIVITY_PRECISION_VARS = {
     "activ_sec_agri_et": "Précisions sur l'activité agricole",
     "activ_nat_lib_et": "Autre nature d'activité",
     "cj_libelle": "Catégorie juridique de l'établissement",
-    # "activ_surf_et_libelle" : "Surface commerciale"
+    "activ_surf_et_libelle" : "Surface commerciale"
 }
 
 # All columns selected from the source file by the ambiguous-data loader.
