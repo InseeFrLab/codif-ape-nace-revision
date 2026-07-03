@@ -17,9 +17,9 @@ ACTIVITY_LABEL_VAR = "libelle"
 # in VAR_TO_KEEP below, so these columns are always loaded from the source file.
 ACTIVITY_PRECISION_VARS = {
     "activ_sec_agri_et": "Précisions sur l'activité agricole",
-    "activ_nat_lib_et": "Autre nature d'activité",
+    "activ_nat_et_libelle": "Autre nature d'activité",
     "cj_libelle": "Catégorie juridique de l'établissement",
-    "activ_surf_et_libelle" : "Surface commerciale"
+    "activ_surf_et_libelle" : "Surface de vente (en mètre carré)"
 }
 
 # All columns selected from the source file by the ambiguous-data loader.
@@ -31,10 +31,9 @@ VAR_TO_KEEP = [
     ACTIVITY_LABEL_VAR,
     *ACTIVITY_PRECISION_VARS,
     #"evenement_type",
-    #"cj",
+    "cj",
     "activ_nat_et",
     "liasse_type",
     "activ_surf_et",
-    "activ_nat_lib_et",
     "activ_perm_et",
 ]
